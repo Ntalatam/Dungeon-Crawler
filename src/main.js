@@ -40,7 +40,6 @@ let gameTime = 0;
 
 // Input state
 let pendingInput = null;
-let keysDown = {};
 let pauseMenuSelection = 0;
 
 // Level transition
@@ -51,7 +50,12 @@ const TRANSITION_DURATION = 1500;
 let highScores = loadHighScores();
 
 // ---- Input handling ----
+const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+  'w', 'W', 'a', 'A', 's', 'S', 'd', 'D', 'e', 'E', 'r', 'R',
+  ' ', '.', '>', 'Enter', 'Escape']);
+
 document.addEventListener('keydown', (e) => {
+  if (GAME_KEYS.has(e.key)) e.preventDefault();
   keysDown[e.key] = true;
 
   if (state === STATE.MAIN_MENU) {
@@ -84,9 +88,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-document.addEventListener('keyup', (e) => {
-  keysDown[e.key] = false;
-});
 
 function handlePauseInput(key) {
   switch (key) {
@@ -117,6 +118,8 @@ function handlePauseInput(key) {
 function startNewGame() {
   seed = Date.now();
   floor = 1;
+  player = null;
+  gameEnded = false;
   messageLog = new MessageLog();
   initFloor();
   state = STATE.PLAYING;
@@ -266,7 +269,9 @@ function tryDescend() {
 
 // Process all enemy actions for this turn
 function processEnemyTurns() {
-  gameTime += CONFIG.GAME_TICK_MS;
+  // Each player action advances time by 300ms (goblin speed)
+  // This means: goblins act every turn, skeletons every 2, trolls every 3
+  gameTime += CONFIG.GOBLIN_MOVE_MS;
 
   const actions = updateAllEnemies(enemies, player, map, gameTime, rng);
 
@@ -295,11 +300,16 @@ function loadHighScores() {
   }
 }
 
+let gameEnded = false;
+
 function saveHighScores() {
   try {
     highScores.highScore = Math.max(highScores.highScore || 0, floor);
     highScores.bestKills = Math.max(highScores.bestKills || 0, player ? player.kills : 0);
-    highScores.gamesPlayed = (highScores.gamesPlayed || 0) + (state === STATE.GAME_OVER || state === STATE.VICTORY ? 1 : 0);
+    if (!gameEnded && (state === STATE.GAME_OVER || state === STATE.VICTORY)) {
+      highScores.gamesPlayed = (highScores.gamesPlayed || 0) + 1;
+      gameEnded = true;
+    }
     highScores.lastSeed = seed;
     localStorage.setItem('dungeonCrawler', JSON.stringify(highScores));
   } catch {
