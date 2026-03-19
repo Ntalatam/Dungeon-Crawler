@@ -7,6 +7,9 @@ export class Player {
   constructor(x, y) {
     this.x = x;
     this.y = y;
+    this.renderX = x;
+    this.renderY = y;
+    this.hitFlash = 0;
     this.hp = 30;
     this.maxHp = 30;
     this.xp = 0;
@@ -50,6 +53,9 @@ export class Enemy {
     const stats = ENEMY_STATS[type];
     this.x = x;
     this.y = y;
+    this.renderX = x;
+    this.renderY = y;
+    this.hitFlash = 0;
     this.type = type;
     this.name = stats.name;
     this.hp = stats.hp;
@@ -67,6 +73,7 @@ export class Enemy {
     this.patrolTarget = null;
     this.blindTimer = 0;
     this.spawnRoom = null;
+    this.recovering = false; // Recovery frame: skip next turn after moving
   }
 
   get isAlive() {

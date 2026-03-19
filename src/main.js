@@ -159,6 +159,8 @@ function initFloor() {
     // Keep player stats, reset position to stairs up
     player.x = dungeon.playerStart.x;
     player.y = dungeon.playerStart.y;
+    player.renderX = player.x;
+    player.renderY = player.y;
   }
 
   // Spawn entities

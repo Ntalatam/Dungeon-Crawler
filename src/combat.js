@@ -23,6 +23,8 @@ export function playerAttack(player, enemy, rng, messageLog, renderer) {
 
   messageLog.add(`You hit the ${enemy.name} for ${damage} damage.`);
   renderer.addEffect(enemy.x, enemy.y, `-${damage}`, COLORS.DAMAGE_TEXT);
+  renderer.shake(4, 0.88);
+  enemy.hitFlash = 150;
 
   if (enemy.hp <= 0) {
     enemy.hp = 0;
@@ -40,6 +42,8 @@ function handleEnemyDeath(player, enemy, rng, messageLog, renderer) {
   const bossText = enemy.isBoss ? ' The dungeon trembles...' : '';
   messageLog.add(`The ${enemy.name} is slain! (+${enemy.xpValue} XP)${bossText}`);
   renderer.addEffect(enemy.x, enemy.y, `+${enemy.xpValue} XP`, COLORS.LEVEL_UP_TEXT);
+  renderer.spawnDeathParticles(enemy.x, enemy.y, enemy.color);
+  renderer.shake(enemy.isBoss ? 12 : 6, 0.82);
 
   // Check level up
   if (player.checkLevelUp()) {
@@ -61,6 +65,8 @@ export function enemyAttack(enemy, player, rng, messageLog, renderer) {
   messageLog.add(`The ${enemy.name} hits you for ${damage} damage!`);
   renderer.addEffect(player.x, player.y, `-${damage}`, COLORS.DAMAGE_TEXT);
   renderer.flash('#e63946', 200);
+  renderer.shake(5, 0.86);
+  player.hitFlash = 150;
 
   if (player.hp <= 0) {
     player.causeOfDeath = `Killed by ${enemy.name}`;

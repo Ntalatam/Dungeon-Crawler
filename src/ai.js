@@ -146,9 +146,9 @@ export function findPath(map, startX, startY, goalX, goalY, enemies, selfEnemy) 
 export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
   if (!enemy.isAlive) return null; // null = no action
 
-  // Update blind timer
+  // Update blind timer (decrement by actual time step per player turn)
   if (enemy.blindTimer > 0) {
-    enemy.blindTimer -= CONFIG.GAME_TICK_MS;
+    enemy.blindTimer -= CONFIG.GOBLIN_MOVE_MS;
     if (enemy.blindTimer < 0) enemy.blindTimer = 0;
   }
 
@@ -209,6 +209,13 @@ export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
 
   // Check if it's time to move
   if (currentTime - enemy.lastMoveTime < enemy.moveMs) return null;
+
+  // Recovery frame: if the enemy just moved, skip this turn
+  if (enemy.recovering) {
+    enemy.recovering = false;
+    enemy.lastMoveTime = currentTime;
+    return null;
+  }
 
   // Execute behavior based on state
   let action = null;
@@ -285,6 +292,7 @@ function doPatrol(enemy, map, enemies, currentTime, rng) {
       enemy.x = nx;
       enemy.y = ny;
       enemy.lastMoveTime = currentTime;
+      enemy.recovering = true; // Skip next turn after moving
       return { type: 'move' };
     }
   }
@@ -316,6 +324,7 @@ function doChase(enemy, player, map, enemies, currentTime) {
       enemy.y = next.y;
       enemy.path.shift();
       enemy.lastMoveTime = currentTime;
+      enemy.recovering = true; // Skip next turn after moving
       return { type: 'move' };
     } else {
       // Path blocked, recalculate next time
@@ -329,7 +338,7 @@ function doChase(enemy, player, map, enemies, currentTime) {
 // Attack behavior: deal damage to player
 function doAttack(enemy, player, currentTime) {
   if (enemy.attackCooldown > 0) {
-    enemy.attackCooldown -= CONFIG.GAME_TICK_MS;
+    enemy.attackCooldown -= CONFIG.GOBLIN_MOVE_MS;
     return null;
   }
 
@@ -362,6 +371,7 @@ function doFlee(enemy, player, map, enemies, currentTime) {
       enemy.x = nx;
       enemy.y = ny;
       enemy.lastMoveTime = currentTime;
+      enemy.recovering = true; // Skip next turn after moving
       return { type: 'move' };
     }
   }
