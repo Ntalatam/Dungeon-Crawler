@@ -181,6 +181,162 @@ export function drawMainMenu(ctx, canvas, highScores) {
   ctx.globalAlpha = 0.5 + pulse * 0.5;
   ctx.fillText('Press ENTER to start', cx, cy + 240);
   ctx.globalAlpha = 1;
+
+  // Info icon (bottom-right)
+  const iconX = canvas.width - 50;
+  const iconY = canvas.height - 40;
+  ctx.save();
+  ctx.strokeStyle = '#888';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(iconX, iconY, 14, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#888';
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('?', iconX, iconY + 6);
+  ctx.restore();
+  ctx.fillStyle = '#666';
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Press ? for How to Play', iconX, iconY + 30);
+}
+
+// Draw the How to Play overlay
+export function drawHowToPlay(ctx, canvas, scrollOffset) {
+  // Dark overlay
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const cx = canvas.width / 2;
+  const margin = 40;
+  const panelW = Math.min(700, canvas.width - margin * 2);
+  const panelX = cx - panelW / 2;
+  let y = 50 - scrollOffset;
+
+  // Panel background
+  ctx.fillStyle = '#12121f';
+  ctx.fillRect(panelX - 20, 30, panelW + 40, canvas.height - 60);
+  ctx.strokeStyle = '#333';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(panelX - 20, 30, panelW + 40, canvas.height - 60);
+
+  // Clip to panel
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(panelX - 20, 35, panelW + 40, canvas.height - 70);
+  ctx.clip();
+
+  // Title
+  ctx.textAlign = 'center';
+  ctx.fillStyle = COLORS.PLAYER;
+  ctx.font = 'bold 30px monospace';
+  ctx.fillText('HOW TO PLAY', cx, y += 40);
+
+  // Section helper
+  function heading(text) {
+    y += 40;
+    ctx.fillStyle = COLORS.PLAYER;
+    ctx.font = 'bold 18px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(text, panelX, y);
+    y += 8;
+    // Underline
+    ctx.strokeStyle = COLORS.PLAYER;
+    ctx.globalAlpha = 0.3;
+    ctx.beginPath();
+    ctx.moveTo(panelX, y);
+    ctx.lineTo(panelX + panelW, y);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  function line(text, color) {
+    y += 22;
+    ctx.fillStyle = color || '#ccc';
+    ctx.font = '13px monospace';
+    ctx.textAlign = 'left';
+    ctx.fillText(text, panelX + 10, y);
+  }
+
+  function gap() { y += 8; }
+
+  // --- Goal ---
+  heading('GOAL');
+  line('Descend through 5 floors of a procedurally generated dungeon.');
+  line('Defeat The Ancient One (boss) on Floor 5 and take the final stairs.');
+  line('Each floor is different. Explore, fight, loot, and survive.');
+
+  // --- Movement & Combat ---
+  heading('MOVEMENT & COMBAT');
+  line('WASD or Arrow Keys to move in 4 directions.');
+  line('The game is turn-based: nothing moves until you do.');
+  line('Walk INTO an enemy to attack (bump attack). No attack key needed.');
+  line('You have an 85% hit chance. Damage = weapon + strength bonus.');
+  line('Press SPACE or . to wait (skip turn). Enemies still act.');
+
+  // --- Items ---
+  heading('ITEMS');
+  line('Health Potions (red +) : Auto-picked up on walk-over. +15 HP.', COLORS.ITEM_POTION);
+  line('Weapons (blue sword)  : Press E to equip. Better weapons on deeper floors.', COLORS.ITEM_WEAPON);
+  line('  Dagger (1-4 dmg)  |  Shortsword (2-6)  |  Longsword (3-8, Floor 2+)');
+  line('  Battle Axe (5-12 dmg, Floor 3+)');
+  line('Scrolls (purple)      : Press E to use. Blinds nearest enemy.', COLORS.ITEM_SCROLL);
+
+  // --- Enemies ---
+  heading('ENEMIES');
+  line('Skeleton (beige)  - 30 HP, slow. Fights to the death.', COLORS.SKELETON);
+  line('Goblin (green)    - 12 HP, fast. Flees when below 25% HP.', COLORS.GOBLIN);
+  line('Troll (brown)     - 60 HP, very slow, heavy damage. Floor 3+.', COLORS.TROLL);
+  gap();
+  line('Enemy dots: gray = idle, red = chasing you, yellow = fleeing.');
+  line('Enemies use A* pathfinding to hunt you through corridors.');
+
+  // --- Leveling ---
+  heading('LEVELING UP');
+  line('Kill enemies to earn XP. Level up for +5 max HP, +1 STR, full heal.');
+  line('XP thresholds: Lv2=10, Lv3=25, Lv4=45, Lv5=70, Lv6=100, Lv7=140');
+
+  // --- Floors ---
+  heading('FLOOR PROGRESSION');
+  line('Floor 1: 5-8 enemies, lots of items. Learn the ropes.');
+  line('Floor 2: 8-12 enemies. Longswords start appearing.');
+  line('Floor 3: Trolls appear! Battle Axes become available.');
+  line('Floor 4: More trolls, fewer items. Things get tough.');
+  line('Floor 5: 15-20 enemies + The Ancient One (120 HP boss).');
+
+  // --- HUD ---
+  heading('READING THE SCREEN');
+  line('Bottom bar: HP (red), XP (yellow), floor, weapon, strength, kills.');
+  line('Top-left: Combat messages (fade after 3 seconds).');
+  line('Top-right: Minimap. White=you, Red=enemies, Yellow=stairs.');
+  line('Fog of war: You see 8 tiles. Explored areas stay dimmed.');
+
+  // --- Tips ---
+  heading('TIPS');
+  line('Lure enemies into corridors for 1-on-1 fights.');
+  line('Grab every potion you can. Items get scarce on deeper floors.');
+  line('Kill Goblins fast - they are quick and can swarm you.');
+  line('Use Scrolls of Blinding on Trolls. They hit HARD.');
+  line('Stand on yellow stairs and press ENTER to go deeper.');
+  line('Check the minimap to find the stairs (yellow dot).');
+
+  // --- Controls Reference ---
+  heading('CONTROLS');
+  line('WASD / Arrows  -  Move / Attack (bump into enemy)');
+  line('E              -  Pick up item / Use scroll');
+  line('SPACE or .     -  Wait (skip turn)');
+  line('ENTER or >     -  Descend stairs');
+  line('ESC            -  Pause menu');
+  line('R              -  Restart (from game over / victory)');
+
+  ctx.restore();
+
+  // Close hint at bottom
+  ctx.fillStyle = '#888';
+  ctx.font = '14px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Press ESC or ? to close  |  Arrow keys to scroll', cx, canvas.height - 14);
 }
 
 // Draw pause menu

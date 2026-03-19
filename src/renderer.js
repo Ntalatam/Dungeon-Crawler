@@ -160,10 +160,36 @@ export class Renderer {
   }
 
   // Draw the player entity
-  drawPlayer(ctx, player, offset) {
+  drawPlayer(ctx, player, offset, gameStartTime) {
     const ts = CONFIG.TILE_SIZE;
     const px = player.x * ts + ts / 2 + offset.x;
     const py = player.y * ts + ts / 2 + offset.y;
+
+    // Bouncing arrow indicator above player (fades out after 5 seconds)
+    if (gameStartTime !== undefined) {
+      const elapsed = Date.now() - gameStartTime;
+      if (elapsed < 5000) {
+        const alpha = Math.max(0, 1 - elapsed / 5000);
+        const bounce = Math.sin(elapsed / 200) * 4;
+        const arrowY = py - ts * 0.8 - 12 + bounce;
+
+        ctx.save();
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = COLORS.PLAYER;
+        ctx.beginPath();
+        ctx.moveTo(px, arrowY + 10);
+        ctx.lineTo(px - 7, arrowY);
+        ctx.lineTo(px + 7, arrowY);
+        ctx.closePath();
+        ctx.fill();
+
+        // "You" label
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('YOU', px, arrowY - 5);
+        ctx.restore();
+      }
+    }
 
     // Glow effect
     ctx.save();
@@ -416,7 +442,7 @@ export class Renderer {
     }
 
     // Draw player
-    this.drawPlayer(ctx, player, offset);
+    this.drawPlayer(ctx, player, offset, gameState.gameStartTime);
 
     // Draw effects
     this.drawEffects(ctx, offset, deltaTime);

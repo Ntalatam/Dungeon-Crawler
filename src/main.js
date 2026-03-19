@@ -6,7 +6,7 @@ import { computeFOV, updateExplored, createExploredMap } from './fov.js';
 import { Player, spawnEnemies, spawnItems, getItemAt, getEnemyAt } from './entities.js';
 import { updateAllEnemies } from './ai.js';
 import { playerAttack, enemyAttack, pickupItem, generateLoot, applyBlinding } from './combat.js';
-import { MessageLog, drawHUD, drawMainMenu, drawPauseMenu, drawGameOver, drawVictory, drawLevelTransition } from './ui.js';
+import { MessageLog, drawHUD, drawMainMenu, drawHowToPlay, drawPauseMenu, drawGameOver, drawVictory, drawLevelTransition } from './ui.js';
 
 // Canvas setup
 const canvas = document.getElementById('gameCanvas');
@@ -41,6 +41,9 @@ let gameTime = 0;
 // Input state
 let pendingInput = null;
 let pauseMenuSelection = 0;
+let showHowToPlay = false;
+let howToPlayScroll = 0;
+let gameStartTime = 0;
 
 // Level transition
 let transitionProgress = 0;
@@ -52,12 +55,27 @@ let highScores = loadHighScores();
 // ---- Input handling ----
 const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
   'w', 'W', 'a', 'A', 's', 'S', 'd', 'D', 'e', 'E', 'r', 'R',
-  ' ', '.', '>', 'Enter', 'Escape']);
+  ' ', '.', '>', 'Enter', 'Escape', '?', '/', 'i', 'I']);
 
 document.addEventListener('keydown', (e) => {
   if (GAME_KEYS.has(e.key)) e.preventDefault();
 
   if (state === STATE.MAIN_MENU) {
+    if (showHowToPlay) {
+      if (e.key === 'Escape' || e.key === '?' || e.key === 'i' || e.key === 'I') {
+        showHowToPlay = false;
+      } else if (e.key === 'ArrowDown' || e.key === 's' || e.key === 'S') {
+        howToPlayScroll = Math.min(howToPlayScroll + 40, 600);
+      } else if (e.key === 'ArrowUp' || e.key === 'w' || e.key === 'W') {
+        howToPlayScroll = Math.max(howToPlayScroll - 40, 0);
+      }
+      return;
+    }
+    if (e.key === '?' || e.key === 'i' || e.key === 'I') {
+      showHowToPlay = true;
+      howToPlayScroll = 0;
+      return;
+    }
     if (e.key === 'Enter') {
       startNewGame();
     }
@@ -121,6 +139,7 @@ function startNewGame() {
   gameEnded = false;
   messageLog = new MessageLog();
   initFloor();
+  gameStartTime = Date.now();
   state = STATE.PLAYING;
 }
 
@@ -326,6 +345,9 @@ function gameLoop(timestamp) {
   switch (state) {
     case STATE.MAIN_MENU:
       drawMainMenu(ctx, canvas, highScores);
+      if (showHowToPlay) {
+        drawHowToPlay(ctx, canvas, howToPlayScroll);
+      }
       break;
 
     case STATE.PLAYING:
@@ -334,7 +356,7 @@ function gameLoop(timestamp) {
       // Draw game
       renderer.draw({
         map, visible, explored, player, enemies, items,
-        endRoom, deltaTime
+        endRoom, deltaTime, gameStartTime
       });
 
       // Draw HUD on top
@@ -345,7 +367,7 @@ function gameLoop(timestamp) {
       // Draw game underneath (frozen)
       renderer.draw({
         map, visible, explored, player, enemies, items,
-        endRoom, deltaTime: 0
+        endRoom, deltaTime: 0, gameStartTime
       });
       drawHUD(ctx, canvas, player, floor, messageLog);
       drawPauseMenu(ctx, canvas, pauseMenuSelection);
