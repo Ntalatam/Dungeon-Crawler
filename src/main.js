@@ -56,7 +56,6 @@ const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
 
 document.addEventListener('keydown', (e) => {
   if (GAME_KEYS.has(e.key)) e.preventDefault();
-  keysDown[e.key] = true;
 
   if (state === STATE.MAIN_MENU) {
     if (e.key === 'Enter') {
