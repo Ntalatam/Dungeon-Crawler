@@ -344,6 +344,7 @@ function gameLoop(timestamp) {
 
   switch (state) {
     case STATE.MAIN_MENU:
+      canvas.style.cursor = 'default';
       drawMainMenu(ctx, canvas, highScores);
       if (showHowToPlay) {
         drawHowToPlay(ctx, canvas, howToPlayScroll);
@@ -351,6 +352,7 @@ function gameLoop(timestamp) {
       break;
 
     case STATE.PLAYING:
+      canvas.style.cursor = 'none';
       processInput();
 
       // Draw game
@@ -364,6 +366,7 @@ function gameLoop(timestamp) {
       break;
 
     case STATE.PAUSED:
+      canvas.style.cursor = 'default';
       // Draw game underneath (frozen)
       renderer.draw({
         map, visible, explored, player, enemies, items,
@@ -392,6 +395,7 @@ function gameLoop(timestamp) {
       break;
 
     case STATE.GAME_OVER:
+      canvas.style.cursor = 'default';
       // Draw game underneath (frozen)
       if (map) {
         renderer.draw({
@@ -403,6 +407,7 @@ function gameLoop(timestamp) {
       break;
 
     case STATE.VICTORY:
+      canvas.style.cursor = 'default';
       if (map) {
         renderer.draw({
           map, visible, explored, player, enemies, items,
