@@ -1,5 +1,5 @@
 // UI System - HUD, Menus, Message Log
-import { COLORS, CONFIG, STATE } from './constants.js';
+import { COLORS, CONFIG } from './constants.js';
 
 // Message Log
 export class MessageLog {
@@ -46,25 +46,62 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   const barHeight = 16;
   const barWidth = 180;
 
-  // HP Bar
+  // HP Bar with damage feedback and low-health warning
   const hpX = padding;
   const hpY = hudY + 12;
   const hpRatio = player.hp / player.maxHp;
+  const now = Date.now();
+  const recentlyDamaged = player.lastDamageTime && (now - player.lastDamageTime < 400);
+  const lowHealth = player.hp > 0 && player.hp < 25;
 
   ctx.fillStyle = COLORS.HUD_TEXT;
   ctx.font = '12px monospace';
   ctx.textAlign = 'left';
   ctx.fillText('HP', hpX, hpY - 2);
 
+  // Bar background
+  const barStartX = hpX + 25;
+  const barStartY = hpY - 12;
+
+  // Low-health glow effect
+  if (lowHealth) {
+    ctx.save();
+    const pulse = 0.3 + 0.4 * Math.sin(now / 200);
+    ctx.shadowColor = '#e63946';
+    ctx.shadowBlur = 12 + pulse * 8;
+    ctx.fillStyle = `rgba(230, 57, 70, ${0.15 + pulse * 0.15})`;
+    ctx.fillRect(barStartX - 3, barStartY - 3, barWidth + 6, barHeight + 6);
+    ctx.restore();
+  }
+
+  // Damage flash glow
+  if (recentlyDamaged) {
+    ctx.save();
+    const flashProgress = (now - player.lastDamageTime) / 400;
+    const flashAlpha = 0.6 * (1 - flashProgress);
+    ctx.shadowColor = '#ff0000';
+    ctx.shadowBlur = 15;
+    ctx.fillStyle = `rgba(255, 0, 0, ${flashAlpha})`;
+    ctx.fillRect(barStartX - 2, barStartY - 2, barWidth + 4, barHeight + 4);
+    ctx.restore();
+  }
+
   ctx.fillStyle = COLORS.HP_BAR_BG;
-  ctx.fillRect(hpX + 25, hpY - 12, barWidth, barHeight);
-  ctx.fillStyle = COLORS.HP_BAR;
-  ctx.fillRect(hpX + 25, hpY - 12, barWidth * hpRatio, barHeight);
+  ctx.fillRect(barStartX, barStartY, barWidth, barHeight);
+  ctx.fillStyle = lowHealth ? (Math.sin(now / 150) > 0 ? '#ff2222' : COLORS.HP_BAR) : COLORS.HP_BAR;
+  ctx.fillRect(barStartX, barStartY, barWidth * hpRatio, barHeight);
+
+  // Damage flash: bright white overlay on bar
+  if (recentlyDamaged) {
+    const flashProgress = (now - player.lastDamageTime) / 400;
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.4 * (1 - flashProgress)})`;
+    ctx.fillRect(barStartX, barStartY, barWidth * hpRatio, barHeight);
+  }
 
   ctx.fillStyle = COLORS.HUD_TEXT;
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(`${player.hp}/${player.maxHp}`, hpX + 25 + barWidth / 2, hpY);
+  ctx.fillText(`${player.hp}/${player.maxHp}`, barStartX + barWidth / 2, hpY);
 
   // XP Bar
   const xpX = padding;
@@ -130,10 +167,16 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   const guideX = canvas.width - 220;
   ctx.textAlign = 'left';
   ctx.font = '11px monospace';
-  // Potion
+  // Potion (heart icon)
   ctx.fillStyle = COLORS.ITEM_POTION;
+  const phx = guideX + 4;
+  const phy = hudY + 14;
   ctx.beginPath();
-  ctx.arc(guideX + 4, hudY + 14, 4, 0, Math.PI * 2);
+  ctx.moveTo(phx, phy + 3);
+  ctx.bezierCurveTo(phx - 5, phy - 1, phx - 5, phy - 4.5, phx - 2.5, phy - 4.5);
+  ctx.bezierCurveTo(phx - 0.5, phy - 4.5, phx, phy - 3, phx, phy - 2);
+  ctx.bezierCurveTo(phx, phy - 3, phx + 0.5, phy - 4.5, phx + 2.5, phy - 4.5);
+  ctx.bezierCurveTo(phx + 5, phy - 4.5, phx + 5, phy - 1, phx, phy + 3);
   ctx.fill();
   ctx.fillStyle = '#aaa';
   ctx.fillText('Potion +15HP (auto)', guideX + 14, hudY + 18);
@@ -160,11 +203,11 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.fillStyle = '#aaa';
   ctx.fillText('Key: unlocks stairs (auto)', guideX + 14, hudY + 54);
 
-  // Minimap hint
-  ctx.fillStyle = '#555';
-  ctx.font = '10px monospace';
+  // Minimap hint (visible, below minimap area)
+  ctx.fillStyle = '#666';
+  ctx.font = '12px monospace';
   ctx.textAlign = 'right';
-  ctx.fillText('M: map', canvas.width - 15, hudY - 6);
+  ctx.fillText('[M] Map  \u2022  Click minimap', canvas.width - 15, hudY - 8);
 
   // Message log (top-left)
   const msgs = messageLog.getRecent();
@@ -183,80 +226,208 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.globalAlpha = 1;
 }
 
+// Ambient particles for main menu
+let menuParticles = [];
+function ensureMenuParticles(canvas) {
+  if (menuParticles.length > 0) return;
+  for (let i = 0; i < 40; i++) {
+    menuParticles.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      vx: (Math.random() - 0.5) * 8,
+      vy: -Math.random() * 12 - 4,
+      size: Math.random() * 2.5 + 0.5,
+      alpha: Math.random() * 0.3 + 0.05,
+      hue: Math.random() * 40 + 30, // gold-amber range
+    });
+  }
+}
+
 // Draw main menu screen
-export function drawMainMenu(ctx, canvas, highScores) {
-  // Dark overlay
-  ctx.fillStyle = COLORS.BG;
+export function drawMainMenu(ctx, canvas, highScores, hoverState = '') {
+  // Gradient background
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  grad.addColorStop(0, '#0a0a18');
+  grad.addColorStop(0.5, '#12122a');
+  grad.addColorStop(1, '#1a0a1a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  // Ambient particles
+  ensureMenuParticles(canvas);
+  const dt = 16 / 1000;
+  for (const p of menuParticles) {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    if (p.y < -10) { p.y = canvas.height + 10; p.x = Math.random() * canvas.width; }
+    if (p.x < -10) p.x = canvas.width + 10;
+    if (p.x > canvas.width + 10) p.x = -10;
+    ctx.globalAlpha = p.alpha;
+    ctx.fillStyle = `hsl(${p.hue}, 80%, 60%)`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Subtle radial vignette
+  const vignette = ctx.createRadialGradient(
+    canvas.width / 2, canvas.height / 2, canvas.height * 0.2,
+    canvas.width / 2, canvas.height / 2, canvas.height * 0.8
+  );
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
+  const t = Date.now() / 1000;
 
-  // Title
+  // Title with layered glow — larger
   ctx.textAlign = 'center';
-  ctx.fillStyle = COLORS.PLAYER;
-  ctx.font = 'bold 48px monospace';
   ctx.save();
-  ctx.shadowColor = COLORS.PLAYER;
-  ctx.shadowBlur = 20;
-  ctx.fillText('DUNGEON CRAWLER', cx, cy - 120);
+  ctx.shadowColor = 'rgba(255, 214, 10, 0.6)';
+  ctx.shadowBlur = 50;
+  ctx.fillStyle = COLORS.PLAYER;
+  ctx.font = 'bold 60px monospace';
+  ctx.fillText('DUNGEON', cx, cy - 170);
+  ctx.shadowBlur = 30;
+  ctx.font = 'bold 42px monospace';
+  ctx.fillStyle = '#c9b06b';
+  ctx.fillText('C R A W L E R', cx, cy - 118);
   ctx.restore();
 
-  // Subtitle
-  ctx.fillStyle = COLORS.HUD_TEXT;
+  // Tagline
+  ctx.fillStyle = '#6a6a8a';
   ctx.font = '16px monospace';
-  ctx.fillText('A Procedural Roguelike', cx, cy - 80);
+  ctx.fillText('A procedural roguelike  \u2022  5 floors  \u2022  permadeath', cx, cy - 82);
 
-  // Controls
-  ctx.fillStyle = '#888';
+  // Two-column controls — larger text and spacing
   ctx.font = '14px monospace';
+  const colL = cx - 150;
+  const colR = cx + 30;
+  const ctrlY = cy - 40;
+  const ctrlSpacing = 26;
   const controls = [
-    'WASD / Arrow Keys - Move',
-    'Bump into enemies to attack',
-    'E - Pick up items',
-    'SPACE - Wait a turn',
-    'ENTER / > - Descend stairs',
-    'ESC - Pause'
+    ['WASD', 'Move', 'E', 'Pick up'],
+    ['Bump', 'Attack', 'SPACE', 'Wait'],
+    ['ENTER', 'Descend', 'ESC', 'Pause'],
   ];
   for (let i = 0; i < controls.length; i++) {
-    ctx.fillText(controls[i], cx, cy - 20 + i * 24);
+    const [k1, v1, k2, v2] = controls[i];
+    ctx.fillStyle = COLORS.PLAYER;
+    ctx.textAlign = 'right';
+    ctx.fillText(k1, colL + 56, ctrlY + i * ctrlSpacing);
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'left';
+    ctx.fillText(v1, colL + 66, ctrlY + i * ctrlSpacing);
+    ctx.fillStyle = COLORS.PLAYER;
+    ctx.textAlign = 'right';
+    ctx.fillText(k2, colR + 56, ctrlY + i * ctrlSpacing);
+    ctx.fillStyle = '#888';
+    ctx.textAlign = 'left';
+    ctx.fillText(v2, colR + 66, ctrlY + i * ctrlSpacing);
   }
 
   // High scores
-  if (highScores) {
-    ctx.fillStyle = COLORS.STAIRS;
+  if (highScores && (highScores.gamesPlayed || 0) > 0) {
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#555';
     ctx.font = '14px monospace';
-    ctx.fillText(`Best Floor: ${highScores.highScore || 1}`, cx, cy + 140);
-    ctx.fillText(`Best Kills: ${highScores.bestKills || 0}`, cx, cy + 164);
-    ctx.fillText(`Games Played: ${highScores.gamesPlayed || 0}`, cx, cy + 188);
+    ctx.fillText(
+      `Best: Floor ${highScores.highScore || 1}  \u2022  ${highScores.bestKills || 0} kills  \u2022  ${highScores.gamesPlayed || 0} games`,
+      cx, cy + 70
+    );
   }
 
-  // Start prompt
-  ctx.fillStyle = COLORS.PLAYER;
-  ctx.font = 'bold 18px monospace';
-  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 500);
-  ctx.globalAlpha = 0.5 + pulse * 0.5;
-  ctx.fillText('Press ENTER to start', cx, cy + 240);
-  ctx.globalAlpha = 1;
+  // Start button — larger
+  const btnY = cy + 130;
+  const btnW = 300;
+  const btnH = 46;
+  const isStartHover = hoverState === 'start';
+  const pulse = 0.5 + 0.5 * Math.sin(t * 3);
 
-  // Info icon (bottom-right)
-  const iconX = canvas.width - 50;
-  const iconY = canvas.height - 40;
   ctx.save();
-  ctx.strokeStyle = '#888';
+  ctx.beginPath();
+  roundRect(ctx, cx - btnW / 2, btnY - btnH / 2, btnW, btnH, 6);
+  if (isStartHover) {
+    ctx.fillStyle = 'rgba(255, 214, 10, 0.2)';
+    ctx.shadowColor = COLORS.PLAYER;
+    ctx.shadowBlur = 20;
+  } else {
+    ctx.fillStyle = `rgba(255, 214, 10, ${0.05 + pulse * 0.08})`;
+    ctx.shadowColor = COLORS.PLAYER;
+    ctx.shadowBlur = 10;
+  }
+  ctx.fill();
+  ctx.strokeStyle = isStartHover ? COLORS.PLAYER : `rgba(255, 214, 10, ${0.3 + pulse * 0.3})`;
+  ctx.lineWidth = isStartHover ? 2 : 1;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = isStartHover ? '#fff' : COLORS.PLAYER;
+  ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ENTER  \u2014  Start Game', cx, btnY + 7);
+
+  // Store button — below start
+  const storeBtnY = cy + 194;
+  const storeBtnW = 200;
+  const storeBtnH = 38;
+  const isStoreHover = hoverState === 'store';
+
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, cx - storeBtnW / 2, storeBtnY - storeBtnH / 2, storeBtnW, storeBtnH, 5);
+  ctx.fillStyle = isStoreHover ? 'rgba(180, 140, 255, 0.15)' : 'rgba(180, 140, 255, 0.05)';
+  ctx.fill();
+  ctx.strokeStyle = isStoreHover ? '#b185db' : 'rgba(180, 140, 255, 0.25)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = isStoreHover ? '#d4b8ff' : '#9a7abf';
+  ctx.font = '14px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Store', cx, storeBtnY + 5);
+
+  // Info icon (bottom-right) - clickable, larger
+  const iconX = canvas.width - 55;
+  const iconY = canvas.height - 50;
+  const isHelpHover = hoverState === 'help';
+  ctx.save();
+  ctx.strokeStyle = isHelpHover ? COLORS.PLAYER : '#666';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(iconX, iconY, 14, 0, Math.PI * 2);
+  ctx.arc(iconX, iconY, 20, 0, Math.PI * 2);
   ctx.stroke();
-  ctx.fillStyle = '#888';
-  ctx.font = 'bold 16px monospace';
+  if (isHelpHover) {
+    ctx.fillStyle = 'rgba(255, 214, 10, 0.15)';
+    ctx.fill();
+  }
+  ctx.fillStyle = isHelpHover ? COLORS.PLAYER : '#888';
+  ctx.font = 'bold 22px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('?', iconX, iconY + 6);
+  ctx.fillText('?', iconX, iconY + 8);
   ctx.restore();
   ctx.fillStyle = '#666';
-  ctx.font = '11px monospace';
+  ctx.font = '14px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('Press ? for How to Play', iconX, iconY + 30);
+  ctx.fillText('How to Play', iconX, iconY + 40);
+}
+
+// Rounded rectangle helper
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
 // Draw the How to Play overlay
@@ -287,18 +458,17 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   // Title
   ctx.textAlign = 'center';
   ctx.fillStyle = COLORS.PLAYER;
-  ctx.font = 'bold 30px monospace';
-  ctx.fillText('HOW TO PLAY', cx, y += 40);
+  ctx.font = 'bold 36px monospace';
+  ctx.fillText('HOW TO PLAY', cx, y += 46);
 
-  // Section helper
+  // Section helper — larger text
   function heading(text) {
-    y += 40;
+    y += 48;
     ctx.fillStyle = COLORS.PLAYER;
-    ctx.font = 'bold 18px monospace';
+    ctx.font = 'bold 22px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(text, panelX, y);
-    y += 8;
-    // Underline
+    y += 10;
     ctx.strokeStyle = COLORS.PLAYER;
     ctx.globalAlpha = 0.3;
     ctx.beginPath();
@@ -309,14 +479,14 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   }
 
   function line(text, color) {
-    y += 22;
+    y += 26;
     ctx.fillStyle = color || '#ccc';
-    ctx.font = '13px monospace';
+    ctx.font = '15px monospace';
     ctx.textAlign = 'left';
     ctx.fillText(text, panelX + 10, y);
   }
 
-  function gap() { y += 8; }
+  function gap() { y += 10; }
 
   // --- Goal ---
   heading('GOAL');
@@ -327,14 +497,14 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   // --- Movement & Combat ---
   heading('MOVEMENT & COMBAT');
   line('WASD or Arrow Keys to move in 4 directions.');
-  line('The game is turn-based: nothing moves until you do.');
+  line('Enemies move in real time — they will hunt you even if you stand still!');
   line('Walk INTO an enemy to attack (bump attack). No attack key needed.');
   line('You have an 85% hit chance. Damage = weapon + strength bonus.');
-  line('Press SPACE or . to wait (skip turn). Enemies still act.');
+  line('Press SPACE or . to wait. Keep moving to stay ahead of enemies.');
 
   // --- Items ---
   heading('ITEMS');
-  line('Health Potions (red +) : Auto-picked up on walk-over. +15 HP.', COLORS.ITEM_POTION);
+  line('Health Potions (red heart) : Auto-picked up on walk-over. +15 HP.', COLORS.ITEM_POTION);
   line('Weapons (blue sword)  : Press E to equip. Better weapons on deeper floors.', COLORS.ITEM_WEAPON);
   line('  Dagger (1-4 dmg)  |  Shortsword (2-6)  |  Longsword (3-8, Floor 2+)');
   line('  Battle Axe (5-12 dmg, Floor 3+)');
@@ -347,6 +517,7 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('Goblin (green)    - 12 HP, fast. Flees when below 25% HP.', COLORS.GOBLIN);
   line('Troll (brown)     - 60 HP, very slow, heavy damage. Floor 3+.', COLORS.TROLL);
   gap();
+  line('Elite enemies have crowns, larger bodies, and stronger stats.');
   line('Enemy dots: gray = idle, red = chasing you, yellow = fleeing.');
   line('Enemies use A* pathfinding to hunt you through corridors.');
 
@@ -394,32 +565,88 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
 
   // Close hint at bottom
   ctx.fillStyle = '#888';
-  ctx.font = '14px monospace';
+  ctx.font = '16px monospace';
   ctx.textAlign = 'center';
   ctx.fillText('Press ESC or ? to close  |  Arrow keys to scroll', cx, canvas.height - 14);
 }
 
 // Draw pause menu
-export function drawPauseMenu(ctx, canvas, selectedOption) {
-  // Darken screen
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+export function drawPauseMenu(ctx, canvas, selectedOption, hoverOption = -1) {
+  // Darken screen with blur-like effect
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
 
+  // Panel background
+  const panelW = 280;
+  const panelH = 220;
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, cx - panelW / 2, cy - panelH / 2 - 20, panelW, panelH, 8);
+  ctx.fillStyle = 'rgba(13, 13, 30, 0.95)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 214, 10, 0.2)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  // Title
   ctx.textAlign = 'center';
   ctx.fillStyle = COLORS.PLAYER;
-  ctx.font = 'bold 36px monospace';
+  ctx.font = 'bold 28px monospace';
   ctx.fillText('PAUSED', cx, cy - 60);
 
+  // Separator
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - 80, cy - 40);
+  ctx.lineTo(cx + 80, cy - 40);
+  ctx.stroke();
+
+  // Button options
   const options = ['Resume', 'Restart', 'Quit to Menu'];
+  const btnW = 200;
+  const btnH = 36;
   for (let i = 0; i < options.length; i++) {
-    ctx.fillStyle = i === selectedOption ? COLORS.PLAYER : COLORS.HUD_TEXT;
-    ctx.font = i === selectedOption ? 'bold 20px monospace' : '18px monospace';
-    const prefix = i === selectedOption ? '> ' : '  ';
-    ctx.fillText(prefix + options[i], cx, cy + i * 36);
+    const btnY = cy - 10 + i * 44;
+    const isSelected = i === selectedOption;
+    const isHover = i === hoverOption;
+    const active = isSelected || isHover;
+
+    // Button background
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, cx - btnW / 2, btnY - btnH / 2, btnW, btnH, 4);
+    if (active) {
+      ctx.fillStyle = 'rgba(255, 214, 10, 0.12)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 214, 10, 0.4)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Button text
+    ctx.fillStyle = active ? COLORS.PLAYER : '#aaa';
+    ctx.font = active ? 'bold 15px monospace' : '14px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(options[i], cx, btnY + 5);
   }
+
+  // Hint
+  ctx.fillStyle = '#444';
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('ESC to resume  \u2022  Click or ENTER to select', cx, cy + panelH / 2 - 30);
 }
 
 // Draw game over screen
@@ -448,10 +675,10 @@ export function drawGameOver(ctx, canvas, player, floor, seed) {
   ctx.fillText(`Seed: ${seed}`, cx, cy + 110);
 
   ctx.fillStyle = COLORS.PLAYER;
-  ctx.font = 'bold 18px monospace';
+  ctx.font = 'bold 16px monospace';
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 500);
   ctx.globalAlpha = 0.5 + pulse * 0.5;
-  ctx.fillText('Press R to restart', cx, cy + 160);
+  ctx.fillText('Press R or click to continue', cx, cy + 160);
   ctx.globalAlpha = 1;
 }
 
@@ -486,11 +713,80 @@ export function drawVictory(ctx, canvas, player, seed) {
   ctx.fillText(`Seed: ${seed}`, cx, cy + 100);
 
   ctx.fillStyle = COLORS.PLAYER;
-  ctx.font = 'bold 18px monospace';
+  ctx.font = 'bold 16px monospace';
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 500);
   ctx.globalAlpha = 0.5 + pulse * 0.5;
-  ctx.fillText('Press R to play again', cx, cy + 150);
+  ctx.fillText('Press R or click to continue', cx, cy + 150);
   ctx.globalAlpha = 1;
+}
+
+// Draw Store overlay (Coming Soon)
+export function drawStore(ctx, canvas) {
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+
+  // Panel
+  const panelW = 400;
+  const panelH = 280;
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, cx - panelW / 2, cy - panelH / 2, panelW, panelH, 10);
+  ctx.fillStyle = 'rgba(18, 18, 35, 0.98)';
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(180, 140, 255, 0.3)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+
+  // Store title
+  ctx.textAlign = 'center';
+  ctx.save();
+  ctx.fillStyle = '#b185db';
+  ctx.shadowColor = '#b185db';
+  ctx.shadowBlur = 20;
+  ctx.font = 'bold 32px monospace';
+  ctx.fillText('STORE', cx, cy - 70);
+  ctx.restore();
+
+  // Separator
+  ctx.strokeStyle = 'rgba(180, 140, 255, 0.2)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx - 100, cy - 45);
+  ctx.lineTo(cx + 100, cy - 45);
+  ctx.stroke();
+
+  // Coming Soon text
+  ctx.fillStyle = '#8a6abf';
+  ctx.font = '18px monospace';
+  ctx.fillText('Coming Soon', cx, cy - 10);
+
+  // Description
+  ctx.fillStyle = '#666';
+  ctx.font = '13px monospace';
+  ctx.fillText('Customize your character with', cx, cy + 30);
+  ctx.fillText('cosmetics and unlockable skins.', cx, cy + 50);
+
+  // Decorative diamond icons
+  ctx.fillStyle = 'rgba(180, 140, 255, 0.2)';
+  for (let i = 0; i < 3; i++) {
+    const dx = cx - 40 + i * 40;
+    const dy = cy + 85;
+    ctx.save();
+    ctx.translate(dx, dy);
+    ctx.rotate(Math.PI / 4);
+    ctx.fillRect(-6, -6, 12, 12);
+    ctx.restore();
+  }
+
+  // Close hint
+  ctx.fillStyle = '#555';
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('Click or press ESC to close', cx, cy + panelH / 2 - 20);
 }
 
 // Draw level transition screen

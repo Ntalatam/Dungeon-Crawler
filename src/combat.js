@@ -61,6 +61,7 @@ export function enemyAttack(enemy, player, rng, messageLog, renderer) {
 
   player.hp -= damage;
   if (player.hp < 0) player.hp = 0;
+  player.lastDamageTime = Date.now();
 
   messageLog.add(`The ${enemy.name} hits you for ${damage} damage!`);
   renderer.addEffect(player.x, player.y, `-${damage}`, COLORS.DAMAGE_TEXT);
@@ -121,7 +122,9 @@ export function pickupItem(player, item, items, messageLog, renderer) {
 
 // Generate loot drop from a killed enemy
 export function generateLoot(enemy, floor, rng) {
-  if (rng() > CONFIG.LOOT_DROP_CHANCE) return null;
+  // Mini-bosses always drop loot
+  const dropChance = enemy.isMiniBoss ? 1.0 : CONFIG.LOOT_DROP_CHANCE;
+  if (rng() > dropChance) return null;
 
   // 60% chance potion, 40% chance weapon
   if (rng() < 0.6) {
@@ -155,7 +158,7 @@ export function applyBlinding(player, enemies, visible, messageLog) {
   }
 
   if (nearest) {
-    nearest.blindTimer = CONFIG.BLIND_DURATION;
+    nearest.blindUntil = performance.now() + CONFIG.BLIND_DURATION;
     messageLog.add(`The ${nearest.name} is blinded!`);
     return true;
   }

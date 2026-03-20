@@ -146,12 +146,6 @@ export function findPath(map, startX, startY, goalX, goalY, enemies, selfEnemy) 
 export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
   if (!enemy.isAlive) return null; // null = no action
 
-  // Update blind timer (decrement by actual time step per player turn)
-  if (enemy.blindTimer > 0) {
-    enemy.blindTimer -= CONFIG.GOBLIN_MOVE_MS;
-    if (enemy.blindTimer < 0) enemy.blindTimer = 0;
-  }
-
   const distToPlayer = manhattan(enemy.x, enemy.y, player.x, player.y);
   const canSeePlayer = distToPlayer <= enemy.fovRange &&
     hasLineOfSight(map, enemy.x, enemy.y, player.x, player.y);
@@ -180,6 +174,17 @@ export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
       if (enemy.canFlee && enemy.hp < enemy.maxHp * 0.25) {
         enemy.state = AI_STATE.FLEEING;
         break;
+      }
+      // Troll guard behavior: hold position in spawn room until player enters or troll is damaged
+      if (enemy.type === 'troll' && enemy.spawnRoom && enemy.hp === enemy.maxHp) {
+        const room = enemy.spawnRoom;
+        const playerInRoom = player.x >= room.x && player.x < room.x + room.width &&
+                             player.y >= room.y && player.y < room.y + room.height;
+        if (!playerInRoom && distToPlayer > 3) {
+          // Hold ground — don't chase out of room
+          enemy.lastMoveTime = currentTime;
+          break;
+        }
       }
       if (distToPlayer <= 1) {
         enemy.state = AI_STATE.ATTACK;
@@ -230,7 +235,7 @@ export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
       break;
 
     case AI_STATE.ATTACK:
-      action = doAttack(enemy, player, currentTime);
+      action = doAttack(enemy, player, map, enemies, currentTime);
       break;
 
     case AI_STATE.FLEEING:
@@ -303,6 +308,12 @@ function doPatrol(enemy, map, enemies, currentTime, rng) {
 
 // Chase behavior: use A* to pursue player
 function doChase(enemy, player, map, enemies, currentTime) {
+  // Hesitation: non-goblins sometimes pause (sizing up the player)
+  if (enemy.type !== 'goblin' && Math.random() < 0.15) {
+    enemy.lastMoveTime = currentTime;
+    return null; // Skip turn — looks like caution
+  }
+
   // Recalculate path periodically
   if (currentTime - enemy.lastPathTime >= CONFIG.PATHFIND_INTERVAL || enemy.path.length === 0) {
     // Only pathfind if within range
@@ -337,16 +348,47 @@ function doChase(enemy, player, map, enemies, currentTime) {
   return null;
 }
 
-// Attack behavior: deal damage to player
-function doAttack(enemy, player, currentTime) {
+// Attack behavior: deal damage to player, with occasional repositioning
+function doAttack(enemy, player, map, enemies, currentTime) {
   if (enemy.attackCooldown > 0) {
     enemy.attackCooldown -= CONFIG.GOBLIN_MOVE_MS;
     return null;
   }
 
+  // 20% chance to reposition instead of attack (circling/flanking)
+  // Makes fights feel more dynamic — enemy moves to another adjacent tile
+  if (Math.random() < 0.20) {
+    return doReposition(enemy, player, map, enemies, currentTime);
+  }
+
   enemy.lastMoveTime = currentTime;
-  enemy.attackCooldown = enemy.moveMs; // Attack speed matches move speed
+  enemy.attackCooldown = enemy.moveMs;
   return { type: 'attack', enemy };
+}
+
+// Reposition: move to a different tile adjacent to the player
+function doReposition(enemy, player, map, enemies, currentTime) {
+  const candidates = [];
+  for (const dir of DIRS) {
+    const nx = player.x + dir.x;
+    const ny = player.y + dir.y;
+    if (nx === enemy.x && ny === enemy.y) continue;
+    if (nx >= 0 && nx < CONFIG.MAP_WIDTH && ny >= 0 && ny < CONFIG.MAP_HEIGHT &&
+        isWalkable(map[ny][nx]) && !getEnemyAt(enemies, nx, ny)) {
+      candidates.push({ x: nx, y: ny });
+    }
+  }
+  if (candidates.length === 0) {
+    enemy.lastMoveTime = currentTime;
+    enemy.attackCooldown = enemy.moveMs;
+    return { type: 'attack', enemy };
+  }
+  const target = candidates[Math.floor(Math.random() * candidates.length)];
+  enemy.x = target.x;
+  enemy.y = target.y;
+  enemy.lastMoveTime = currentTime;
+  enemy.recovering = true;
+  return { type: 'move' };
 }
 
 // Flee behavior: run away from player

@@ -1,5 +1,5 @@
 // Entity System - Player, Enemy, Item classes
-import { CONFIG, ENEMY_STATS, WEAPONS, AI_STATE, FLOOR_CONFIG, TILE } from './constants.js';
+import { CONFIG, COLORS, ENEMY_STATS, WEAPONS, AI_STATE, FLOOR_CONFIG, TILE } from './constants.js';
 import { isWalkable } from './dungeon.js';
 
 // Player class
@@ -18,6 +18,7 @@ export class Player {
     this.weapon = { ...WEAPONS.fists };
     this.kills = 0;
     this.causeOfDeath = '';
+    this.lastDamageTime = 0;
   }
 
   get isAlive() {
@@ -67,11 +68,11 @@ export class Enemy {
     this.canFlee = stats.flees;
     this.state = AI_STATE.IDLE;
     this.path = [];
-    this.lastMoveTime = 0;
-    this.lastPathTime = 0;
+    this.lastMoveTime = performance.now();
+    this.lastPathTime = performance.now();
     this.attackCooldown = 0;
     this.patrolTarget = null;
-    this.blindTimer = 0;
+    this.blindUntil = 0; // Timestamp when blind expires
     this.spawnRoom = null;
     this.recovering = false; // Recovery frame: skip next turn after moving
   }
@@ -81,7 +82,7 @@ export class Enemy {
   }
 
   get fovRange() {
-    if (this.blindTimer > 0) return 1;
+    if (this.blindUntil > 0 && performance.now() < this.blindUntil) return 1;
     return CONFIG.ENEMY_FOV_RANGE;
   }
 }
@@ -91,12 +92,29 @@ export class BossEnemy extends Enemy {
   constructor(x, y) {
     super(x, y, 'troll');
     this.name = 'The Ancient One';
-    this.hp = 120;
-    this.maxHp = 120;
+    this.hp = 150;
+    this.maxHp = 150;
     this.baseDamage = 12;
     this.xpValue = 50;
     this.isBoss = true;
   }
+}
+
+// Promote a regular enemy to mini-boss (in-place)
+function promoteToMiniBoss(enemy) {
+  enemy.isMiniBoss = true;
+  enemy.name = `Elite ${enemy.name}`;
+  enemy.hp = Math.round(enemy.hp * 1.5);
+  enemy.maxHp = enemy.hp;
+  enemy.baseDamage = Math.round(enemy.baseDamage * 1.5);
+  enemy.xpValue = Math.round(enemy.xpValue * 2);
+  // Distinct color per type
+  const eliteColors = {
+    skeleton: COLORS.ELITE_SKELETON,
+    goblin: COLORS.ELITE_GOBLIN,
+    troll: COLORS.ELITE_TROLL,
+  };
+  enemy.color = eliteColors[enemy.type] || enemy.color;
 }
 
 // Item class
@@ -142,6 +160,13 @@ export function spawnEnemies(floor, entitySpawns, rooms, rng) {
 
     const enemy = new Enemy(spawn.x, spawn.y, type);
     enemy.spawnRoom = spawn.room;
+
+    // Promote to mini-boss based on floor config
+    const miniBossChance = config.miniBossChance || 0;
+    if (miniBossChance > 0 && rng() < miniBossChance) {
+      promoteToMiniBoss(enemy);
+    }
+
     enemies.push(enemy);
   }
 

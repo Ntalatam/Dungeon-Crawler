@@ -306,7 +306,9 @@ export class Renderer {
 
     const ts = CONFIG.TILE_SIZE;
     const { px, py } = this.getEntityPixelPos(enemy, offset);
-    const radius = ts * 0.32;
+    const isElite = enemy.isMiniBoss || enemy.isBoss;
+    const baseRadius = ts * (isElite ? 0.48 : 0.32);
+    const radius = baseRadius;
 
     const isHit = enemy.hitFlash && enemy.hitFlash > 0;
 
@@ -317,9 +319,21 @@ export class Renderer {
     ctx.ellipse(px, py + radius + 2, radius * 0.7, radius * 0.25, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // Glow
+    // Elite/boss: pulsing outer ring aura
+    if (isElite && !isHit) {
+      const pulse = 0.4 + 0.3 * Math.sin(this.time * 4);
+      ctx.globalAlpha = pulse;
+      ctx.strokeStyle = enemy.isBoss ? '#ff4444' : enemy.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(px, py, radius + 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+    }
+
+    // Glow (stronger for elites)
     ctx.shadowColor = isHit ? '#ffffff' : enemy.color;
-    ctx.shadowBlur = isHit ? 16 : 10;
+    ctx.shadowBlur = isHit ? 16 : (isElite ? 16 : 10);
 
     // Circle body with slight scale on hit
     const drawRadius = isHit ? radius * 1.15 : radius;
@@ -335,43 +349,54 @@ export class Renderer {
       ctx.arc(px - radius * 0.25, py - radius * 0.15, radius * 0.15, 0, Math.PI * 2);
       ctx.arc(px + radius * 0.25, py - radius * 0.15, radius * 0.15, 0, Math.PI * 2);
       ctx.fill();
+
+      // Elite crown/spikes
+      if (isElite) {
+        ctx.fillStyle = enemy.isBoss ? '#ff4444' : 'rgba(255,255,255,0.4)';
+        const crownY = py - radius - 1;
+        for (let i = -1; i <= 1; i++) {
+          ctx.beginPath();
+          ctx.moveTo(px + i * 4 - 2, crownY);
+          ctx.lineTo(px + i * 4, crownY - 5);
+          ctx.lineTo(px + i * 4 + 2, crownY);
+          ctx.fill();
+        }
+      }
     }
 
     ctx.restore();
 
     // HP bar (only if damaged)
     if (enemy.hp < enemy.maxHp) {
-      const barWidth = ts * 0.8;
-      const barHeight = 4;
+      const barWidth = ts * (isElite ? 1.0 : 0.8);
+      const barHeight = isElite ? 5 : 4;
       const barX = px - barWidth / 2;
-      const barY = py - radius - 10;
+      const barY = py - radius - (isElite ? 14 : 10);
       const hpRatio = enemy.hp / enemy.maxHp;
 
-      // Background with rounded look
       ctx.fillStyle = COLORS.HP_BAR_BG;
       ctx.fillRect(barX, barY, barWidth, barHeight);
-      // HP fill
       const hpColor = hpRatio > 0.5 ? COLORS.HP_BAR :
                        hpRatio > 0.25 ? '#ff8800' : '#ff0000';
       ctx.fillStyle = hpColor;
       ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight);
-      // Border
       ctx.strokeStyle = 'rgba(0,0,0,0.4)';
       ctx.lineWidth = 0.5;
       ctx.strokeRect(barX, barY, barWidth, barHeight);
     }
 
-    // State indicator (icon instead of dot)
+    // State indicator
+    const indicatorY = py - radius - (isElite ? 18 : 14);
     if (enemy.state === 'CHASE' || enemy.state === 'ATTACK') {
       ctx.fillStyle = '#ff4444';
-      ctx.font = 'bold 10px monospace';
+      ctx.font = `bold ${isElite ? 12 : 10}px monospace`;
       ctx.textAlign = 'center';
-      ctx.fillText('!', px, py - radius - 14);
+      ctx.fillText('!', px, indicatorY);
     } else if (enemy.state === 'FLEEING') {
       ctx.fillStyle = '#ffff00';
-      ctx.font = 'bold 10px monospace';
+      ctx.font = `bold ${isElite ? 12 : 10}px monospace`;
       ctx.textAlign = 'center';
-      ctx.fillText('~', px, py - radius - 14);
+      ctx.fillText('~', px, indicatorY);
     }
   }
 
@@ -403,19 +428,24 @@ export class Renderer {
       ctx.lineTo(px + 5, py - 1 + hover);
       ctx.stroke();
     } else if (item.type === 'potion') {
-      // Potion bottle shape
+      // Heart shape — immediately reads as health
       ctx.shadowColor = COLORS.ITEM_POTION;
-      ctx.shadowBlur = 6;
+      ctx.shadowBlur = 8;
       ctx.fillStyle = COLORS.ITEM_POTION;
-      // Bottle body
+      const hx = px;
+      const hy = py + hover;
       ctx.beginPath();
-      ctx.arc(px, py + 1 + hover, 5, 0, Math.PI * 2);
+      ctx.moveTo(hx, hy + 5);
+      ctx.bezierCurveTo(hx - 7, hy - 2, hx - 7, hy - 7, hx - 3.5, hy - 7);
+      ctx.bezierCurveTo(hx - 1, hy - 7, hx, hy - 5, hx, hy - 3);
+      ctx.bezierCurveTo(hx, hy - 5, hx + 1, hy - 7, hx + 3.5, hy - 7);
+      ctx.bezierCurveTo(hx + 7, hy - 7, hx + 7, hy - 2, hx, hy + 5);
       ctx.fill();
-      // Bottle neck
-      ctx.fillRect(px - 2, py - 5 + hover, 4, 4);
-      // Cork
-      ctx.fillStyle = '#d4a017';
-      ctx.fillRect(px - 2, py - 7 + hover, 4, 2);
+      // Inner highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.beginPath();
+      ctx.arc(hx - 2.5, hy - 4, 2, 0, Math.PI * 2);
+      ctx.fill();
     } else if (item.type === 'scroll') {
       ctx.shadowColor = COLORS.ITEM_SCROLL;
       ctx.shadowBlur = 6;
@@ -615,13 +645,18 @@ export class Renderer {
       }
     }
 
-    // Visible enemies
+    // Visible enemies (mini-bosses slightly larger on minimap)
     for (const enemy of enemies) {
       if (!enemy.isAlive || !visible[enemy.y][enemy.x]) continue;
       const px = mx + enemy.x * ms + offsetX;
       const py = my + enemy.y * ms + offsetY;
-      ctx.fillStyle = '#e63946';
-      ctx.fillRect(px, py, ms, ms);
+      if (enemy.isMiniBoss || enemy.isBoss) {
+        ctx.fillStyle = '#ff6666';
+        ctx.fillRect(px - 1, py - 1, ms + 2, ms + 2);
+      } else {
+        ctx.fillStyle = '#e63946';
+        ctx.fillRect(px, py, ms, ms);
+      }
     }
 
     // Player
@@ -633,10 +668,10 @@ export class Renderer {
     ctx.restore();
 
     // Click hint
-    ctx.fillStyle = '#555';
-    ctx.font = '10px monospace';
+    ctx.fillStyle = '#666';
+    ctx.font = '11px monospace';
     ctx.textAlign = 'center';
-    ctx.fillText('click to enlarge', mx + mw / 2, my + mh + 14);
+    ctx.fillText('[M] or click to expand', mx + mw / 2, my + mh + 14);
   }
 
   // Draw enlarged minimap overlay (full-screen)
@@ -805,6 +840,9 @@ export class Renderer {
     // Draw screen flash
     this.drawScreenFlash(ctx, deltaTime);
 
+    // Vignette overlay for atmosphere
+    this.drawVignette(ctx);
+
     // Draw minimap
     this.drawMinimap(ctx, map, visible, explored, player, enemies, items,
       gameState.keysCollected || 0, gameState.keysRequired || 0);
@@ -814,6 +852,17 @@ export class Renderer {
     for (const enemy of enemies) {
       if (enemy.hitFlash > 0) enemy.hitFlash -= deltaTime;
     }
+  }
+
+  // Draw vignette overlay for atmospheric effect
+  drawVignette(ctx) {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const gradient = ctx.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h * 0.85);
+    gradient.addColorStop(0, 'rgba(0,0,0,0)');
+    gradient.addColorStop(1, 'rgba(0,0,0,0.4)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
   }
 
   // Smoothly interpolate entity render position toward actual position
