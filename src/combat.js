@@ -104,6 +104,12 @@ export function pickupItem(player, item, items, messageLog, renderer) {
       messageLog.add(`You read the ${item.name}!`);
       // The blind effect is applied by the caller (main.js)
       break;
+
+    case 'key':
+      messageLog.add('You found a Floor Key!');
+      renderer.addEffect(item.x, item.y, 'KEY', '#ffd700');
+      renderer.flash('#ffd700', 200);
+      break;
   }
 
   // Remove item from world

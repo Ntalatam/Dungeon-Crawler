@@ -292,7 +292,8 @@ function doPatrol(enemy, map, enemies, currentTime, rng) {
       enemy.x = nx;
       enemy.y = ny;
       enemy.lastMoveTime = currentTime;
-      enemy.recovering = true; // Skip next turn after moving
+      // Goblins patrol quickly, no recovery. Others recover.
+      enemy.recovering = enemy.type !== 'goblin';
       return { type: 'move' };
     }
   }
@@ -324,7 +325,8 @@ function doChase(enemy, player, map, enemies, currentTime) {
       enemy.y = next.y;
       enemy.path.shift();
       enemy.lastMoveTime = currentTime;
-      enemy.recovering = true; // Skip next turn after moving
+      // Goblins chase without recovery (fast & dangerous), others pause after moving
+      enemy.recovering = enemy.type !== 'goblin';
       return { type: 'move' };
     } else {
       // Path blocked, recalculate next time
@@ -371,7 +373,8 @@ function doFlee(enemy, player, map, enemies, currentTime) {
       enemy.x = nx;
       enemy.y = ny;
       enemy.lastMoveTime = currentTime;
-      enemy.recovering = true; // Skip next turn after moving
+      // ALL enemies recover when fleeing (panicking, inefficient) — makes them catchable
+      enemy.recovering = true;
       return { type: 'move' };
     }
   }

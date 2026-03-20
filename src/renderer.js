@@ -23,6 +23,8 @@ export class Renderer {
     this.mapCtx = this.mapCanvas.getContext('2d');
     this.gritMap = null;
     this.time = 0;
+    this.keysCollected = 0;
+    this.keysRequired = 0;
   }
 
   // Generate random grit dots for floor texturing (seeded)
@@ -173,12 +175,13 @@ export class Renderer {
             ctx.fillRect(px + ts * 0.55, py + ts * 0.45, 3, 3);
             break;
 
-          case TILE.STAIRS_DOWN:
+          case TILE.STAIRS_DOWN: {
             ctx.fillStyle = isVisible ? COLORS.FLOOR_LIT : COLORS.FLOOR;
             ctx.fillRect(px, py, ts, ts);
-            ctx.strokeStyle = COLORS.STAIRS;
+            const stairsLocked = this.keysCollected < this.keysRequired;
+            ctx.strokeStyle = stairsLocked ? '#666' : COLORS.STAIRS;
             ctx.lineWidth = 2;
-            ctx.shadowColor = COLORS.STAIRS;
+            ctx.shadowColor = stairsLocked ? '#444' : COLORS.STAIRS;
             ctx.shadowBlur = isVisible ? 4 : 0;
             for (let i = 0; i < 4; i++) {
               const sy = py + 6 + i * 6;
@@ -188,8 +191,23 @@ export class Renderer {
               ctx.lineTo(px + ts - 4 - i * 3, sy);
               ctx.stroke();
             }
+            // Lock icon when locked
+            if (stairsLocked && isVisible) {
+              const cx = px + ts / 2;
+              const cy = py + ts / 2;
+              // Lock body
+              ctx.fillStyle = '#888';
+              ctx.fillRect(cx - 5, cy - 1, 10, 8);
+              // Lock shackle
+              ctx.strokeStyle = '#888';
+              ctx.lineWidth = 2;
+              ctx.beginPath();
+              ctx.arc(cx, cy - 1, 4, Math.PI, 0);
+              ctx.stroke();
+            }
             ctx.shadowBlur = 0;
             break;
+          }
 
           case TILE.STAIRS_UP:
             ctx.fillStyle = isVisible ? COLORS.FLOOR_LIT : COLORS.FLOOR;
@@ -407,6 +425,20 @@ export class Renderer {
       ctx.fillRect(px - 3, py - 3 + hover, 6, 1);
       ctx.fillRect(px - 3, py + hover, 6, 1);
       ctx.fillRect(px - 3, py + 3 + hover, 6, 1);
+    } else if (item.type === 'key') {
+      // Gold key with glow
+      ctx.shadowColor = '#ffd700';
+      ctx.shadowBlur = 10;
+      ctx.fillStyle = '#ffd700';
+      // Key head (circle)
+      ctx.beginPath();
+      ctx.arc(px, py - 3 + hover, 4, 0, Math.PI * 2);
+      ctx.fill();
+      // Key shaft
+      ctx.fillRect(px - 1.5, py + 1 + hover, 3, 8);
+      // Key teeth
+      ctx.fillRect(px + 1.5, py + 5 + hover, 3, 2);
+      ctx.fillRect(px + 1.5, py + 8 + hover, 2, 2);
     }
 
     ctx.restore();
@@ -525,7 +557,7 @@ export class Renderer {
   }
 
   // Draw minimap
-  drawMinimap(ctx, map, visible, explored, player, enemies) {
+  drawMinimap(ctx, map, visible, explored, player, enemies, items, keysCollected, keysRequired) {
     const mw = CONFIG.MINIMAP_WIDTH;
     const mh = CONFIG.MINIMAP_HEIGHT;
     const ms = CONFIG.MINIMAP_SCALE;
@@ -535,7 +567,7 @@ export class Renderer {
     // Background
     ctx.fillStyle = COLORS.MINIMAP_BG;
     ctx.fillRect(mx - 2, my - 2, mw + 4, mh + 4);
-    ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
     ctx.lineWidth = 1;
     ctx.strokeRect(mx - 2, my - 2, mw + 4, mh + 4);
 
@@ -561,12 +593,25 @@ export class Renderer {
           ctx.fillStyle = '#3a3e59';
           ctx.fillRect(px, py, ms, ms);
         } else if (tile === TILE.STAIRS_DOWN) {
-          ctx.fillStyle = COLORS.STAIRS;
+          // Show locked/unlocked stairs
+          ctx.fillStyle = (keysCollected >= keysRequired) ? COLORS.STAIRS : '#666';
           ctx.fillRect(px, py, ms, ms);
         } else {
           ctx.fillStyle = visible[y][x] ? '#555' : '#333';
           ctx.fillRect(px, py, ms, ms);
         }
+      }
+    }
+
+    // Visible keys on minimap (gold dots)
+    if (items) {
+      for (const item of items) {
+        if (item.type !== 'key') continue;
+        if (!explored[item.y] || !explored[item.y][item.x]) continue;
+        const px = mx + item.x * ms + offsetX;
+        const py = my + item.y * ms + offsetY;
+        ctx.fillStyle = '#ffd700';
+        ctx.fillRect(px, py, ms, ms);
       }
     }
 
@@ -586,6 +631,124 @@ export class Renderer {
     ctx.fillRect(ppx, ppy, ms + 1, ms + 1);
 
     ctx.restore();
+
+    // Click hint
+    ctx.fillStyle = '#555';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('click to enlarge', mx + mw / 2, my + mh + 14);
+  }
+
+  // Draw enlarged minimap overlay (full-screen)
+  drawMinimapOverlay(ctx, map, visible, explored, player, enemies, items) {
+    // Dark overlay
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+    ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+    // Calculate scale to fit map on screen
+    const padding = 80;
+    const availW = this.canvas.width - padding * 2;
+    const availH = this.canvas.height - padding * 2;
+    const scaleX = availW / CONFIG.MAP_WIDTH;
+    const scaleY = availH / CONFIG.MAP_HEIGHT;
+    const scale = Math.min(scaleX, scaleY, 12);
+
+    const mapW = CONFIG.MAP_WIDTH * scale;
+    const mapH = CONFIG.MAP_HEIGHT * scale;
+    const ox = Math.floor((this.canvas.width - mapW) / 2);
+    const oy = Math.floor((this.canvas.height - mapH) / 2);
+
+    // Panel background
+    ctx.fillStyle = '#0d0d1a';
+    ctx.fillRect(ox - 4, oy - 4, mapW + 8, mapH + 8);
+    ctx.strokeStyle = '#555';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(ox - 4, oy - 4, mapW + 8, mapH + 8);
+
+    // Draw map tiles
+    for (let y = 0; y < CONFIG.MAP_HEIGHT; y++) {
+      for (let x = 0; x < CONFIG.MAP_WIDTH; x++) {
+        if (!explored[y][x]) continue;
+
+        const px = ox + x * scale;
+        const py = oy + y * scale;
+        const isVisible = visible[y][x];
+        const tile = map[y][x];
+
+        if (tile === TILE.WALL) {
+          ctx.fillStyle = isVisible ? '#4a4e69' : '#333';
+          ctx.fillRect(px, py, scale, scale);
+        } else if (tile === TILE.STAIRS_DOWN) {
+          ctx.fillStyle = COLORS.STAIRS;
+          ctx.fillRect(px, py, scale, scale);
+        } else if (tile === TILE.DOOR) {
+          ctx.fillStyle = isVisible ? '#8b6914' : '#554010';
+          ctx.fillRect(px, py, scale, scale);
+        } else {
+          ctx.fillStyle = isVisible ? '#666' : '#444';
+          ctx.fillRect(px, py, scale, scale);
+        }
+      }
+    }
+
+    // Items (keys highlighted)
+    if (items) {
+      for (const item of items) {
+        if (!explored[item.y] || !explored[item.y][item.x]) continue;
+        const px = ox + item.x * scale;
+        const py = oy + item.y * scale;
+        if (item.type === 'key') {
+          ctx.fillStyle = '#ffd700';
+          ctx.fillRect(px, py, scale, scale);
+        } else if (visible[item.y][item.x]) {
+          ctx.fillStyle = item.type === 'potion' ? '#e63946' :
+                          item.type === 'weapon' ? '#90e0ef' : '#b185db';
+          ctx.globalAlpha = 0.7;
+          ctx.fillRect(px, py, scale, scale);
+          ctx.globalAlpha = 1;
+        }
+      }
+    }
+
+    // Enemies
+    for (const enemy of enemies) {
+      if (!enemy.isAlive || !visible[enemy.y][enemy.x]) continue;
+      ctx.fillStyle = enemy.color;
+      ctx.fillRect(ox + enemy.x * scale, oy + enemy.y * scale, scale, scale);
+    }
+
+    // Player (slightly larger, white with glow)
+    ctx.save();
+    ctx.shadowColor = COLORS.PLAYER;
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(ox + player.x * scale - 1, oy + player.y * scale - 1, scale + 2, scale + 2);
+    ctx.restore();
+
+    // Legend
+    const legY = oy + mapH + 20;
+    ctx.font = '12px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#888';
+    ctx.fillText('Click anywhere or press M / ESC to close', this.canvas.width / 2, legY);
+
+    // Color legend
+    const legX = ox;
+    ctx.textAlign = 'left';
+    ctx.font = '11px monospace';
+    const legends = [
+      ['#ffffff', 'You'],
+      ['#e63946', 'Enemy'],
+      [COLORS.STAIRS, 'Stairs'],
+      ['#ffd700', 'Key'],
+    ];
+    for (let i = 0; i < legends.length; i++) {
+      const lx = legX + i * 100;
+      ctx.fillStyle = legends[i][0];
+      ctx.fillRect(lx, legY + 10, 8, 8);
+      ctx.fillStyle = '#aaa';
+      ctx.fillText(legends[i][1], lx + 14, legY + 18);
+    }
   }
 
   // Main draw call
@@ -594,6 +757,8 @@ export class Renderer {
     const { map, visible, explored, player, enemies, items } = gameState;
     const deltaTime = gameState.deltaTime || 16;
     this.time += deltaTime / 1000;
+    this.keysCollected = gameState.keysCollected || 0;
+    this.keysRequired = gameState.keysRequired || 0;
 
     // Update interpolation for all entities
     this.updateEntityInterpolation(player, deltaTime);
@@ -641,7 +806,8 @@ export class Renderer {
     this.drawScreenFlash(ctx, deltaTime);
 
     // Draw minimap
-    this.drawMinimap(ctx, map, visible, explored, player, enemies);
+    this.drawMinimap(ctx, map, visible, explored, player, enemies, items,
+      gameState.keysCollected || 0, gameState.keysRequired || 0);
 
     // Decay hit flashes
     if (player.hitFlash > 0) player.hitFlash -= deltaTime;

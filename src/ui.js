@@ -26,7 +26,7 @@ export class MessageLog {
 }
 
 // Draw the in-game HUD
-export function drawHUD(ctx, canvas, player, floor, messageLog) {
+export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 0, keysRequired = 0) {
   const hudH = CONFIG.HUD_HEIGHT;
   const hudY = canvas.height - hudH;
 
@@ -108,6 +108,63 @@ export function drawHUD(ctx, canvas, player, floor, messageLog) {
   ctx.font = '12px monospace';
   ctx.fillText(`STR: ${player.strength}`, statsX, hudY + 22);
   ctx.fillText(`Kills: ${player.kills}`, statsX, hudY + 42);
+
+  // Key counter (next to floor)
+  if (keysRequired > 0) {
+    const keyX = floorX + 120;
+    ctx.fillStyle = keysCollected >= keysRequired ? '#06d6a0' : '#ffd700';
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'left';
+    // Draw small key icon
+    ctx.beginPath();
+    ctx.arc(keyX + 4, hudY + 16, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(keyX + 2, hudY + 19, 3, 5);
+    ctx.fillText(` ${keysCollected}/${keysRequired}`, keyX + 10, hudY + 22);
+    ctx.fillStyle = '#888';
+    ctx.font = '11px monospace';
+    ctx.fillText(keysCollected >= keysRequired ? 'Stairs open' : 'Keys needed', keyX, hudY + 38);
+  }
+
+  // Consumable guide (right side)
+  const guideX = canvas.width - 220;
+  ctx.textAlign = 'left';
+  ctx.font = '11px monospace';
+  // Potion
+  ctx.fillStyle = COLORS.ITEM_POTION;
+  ctx.beginPath();
+  ctx.arc(guideX + 4, hudY + 14, 4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Potion +15HP (auto)', guideX + 14, hudY + 18);
+  // Weapon
+  ctx.strokeStyle = COLORS.ITEM_WEAPON;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(guideX, hudY + 30);
+  ctx.lineTo(guideX + 8, hudY + 22);
+  ctx.stroke();
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Weapon (press E)', guideX + 14, hudY + 30);
+  // Scroll
+  ctx.fillStyle = COLORS.ITEM_SCROLL;
+  ctx.fillRect(guideX, hudY + 35, 8, 8);
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Scroll: blinds (E)', guideX + 14, hudY + 42);
+  // Key
+  ctx.fillStyle = '#ffd700';
+  ctx.beginPath();
+  ctx.arc(guideX + 4, hudY + 50, 3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillRect(guideX + 2, hudY + 53, 3, 4);
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Key: unlocks stairs (auto)', guideX + 14, hudY + 54);
+
+  // Minimap hint
+  ctx.fillStyle = '#555';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('M: map', canvas.width - 15, hudY - 6);
 
   // Message log (top-left)
   const msgs = messageLog.getRecent();
@@ -282,6 +339,7 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('  Dagger (1-4 dmg)  |  Shortsword (2-6)  |  Longsword (3-8, Floor 2+)');
   line('  Battle Axe (5-12 dmg, Floor 3+)');
   line('Scrolls (purple)      : Press E to use. Blinds nearest enemy.', COLORS.ITEM_SCROLL);
+  line('Floor Keys (gold)     : Auto-picked up. Required to unlock the stairs.', '#ffd700');
 
   // --- Enemies ---
   heading('ENEMIES');
@@ -299,11 +357,12 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
 
   // --- Floors ---
   heading('FLOOR PROGRESSION');
-  line('Floor 1: 5-8 enemies, lots of items. Learn the ropes.');
-  line('Floor 2: 8-12 enemies. Longswords start appearing.');
-  line('Floor 3: Trolls appear! Battle Axes become available.');
-  line('Floor 4: More trolls, fewer items. Things get tough.');
-  line('Floor 5: 15-20 enemies + The Ancient One (120 HP boss).');
+  line('Each floor requires keys to unlock the stairs. Explore to find them!');
+  line('Floor 1: 5-8 enemies, lots of items. 1 key needed.');
+  line('Floor 2: 8-12 enemies. Longswords appear. 1 key needed.');
+  line('Floor 3: Trolls appear! Battle Axes available. 2 keys needed.');
+  line('Floor 4: More trolls, fewer items. 2 keys needed.');
+  line('Floor 5: 15-20 enemies + The Ancient One (boss). 3 keys needed.');
 
   // --- HUD ---
   heading('READING THE SCREEN');
@@ -328,6 +387,7 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('SPACE or .     -  Wait (skip turn)');
   line('ENTER or >     -  Descend stairs');
   line('ESC            -  Pause menu');
+  line('M              -  Toggle full map');
   line('R              -  Restart (from game over / victory)');
 
   ctx.restore();

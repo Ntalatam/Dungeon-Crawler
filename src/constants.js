@@ -27,6 +27,8 @@ export const COLORS = {
   ITEM_POTION: '#e63946',
   ITEM_SCROLL: '#b185db',
   STAIRS: '#ffc300',
+  STAIRS_LOCKED: '#666666',
+  KEY: '#ffd700',
   HUD_BG: '#0d0d1a',
   HUD_TEXT: '#f2e9e4',
   HP_BAR: '#e63946',
@@ -56,10 +58,11 @@ export const CONFIG = {
   MAX_PLAYER_LEVEL: 7,
   XP_THRESHOLDS: [0, 10, 25, 45, 70, 100, 140],
   CAMERA_LERP: 0.15,
-  HUD_HEIGHT: 60,
-  MINIMAP_WIDTH: 160,
-  MINIMAP_HEIGHT: 100,
-  MINIMAP_SCALE: 2,
+  HUD_HEIGHT: 68,
+  MINIMAP_WIDTH: 280,
+  MINIMAP_HEIGHT: 180,
+  MINIMAP_SCALE: 3,
+  MOVE_COOLDOWN_MS: 130,
   MESSAGE_DISPLAY_TIME: 3000,
   MAX_MESSAGES: 3,
   ENEMY_FOV_RANGE: 6,
@@ -75,11 +78,11 @@ export const CONFIG = {
 // Difficulty scaling per floor
 export const FLOOR_CONFIG = [
   null, // index 0 unused
-  { enemyMin: 5, enemyMax: 8, types: ['skeleton', 'goblin'], itemDensity: 'high' },
-  { enemyMin: 8, enemyMax: 12, types: ['skeleton', 'goblin'], itemDensity: 'medium' },
-  { enemyMin: 10, enemyMax: 15, types: ['skeleton', 'goblin', 'troll'], trollMax: 2, itemDensity: 'medium' },
-  { enemyMin: 12, enemyMax: 18, types: ['skeleton', 'goblin', 'troll'], trollMax: 4, itemDensity: 'low' },
-  { enemyMin: 15, enemyMax: 20, types: ['skeleton', 'goblin', 'troll'], trollMax: 6, boss: true, itemDensity: 'low' }
+  { enemyMin: 5, enemyMax: 8, types: ['skeleton', 'goblin'], itemDensity: 'high', keysRequired: 1 },
+  { enemyMin: 8, enemyMax: 12, types: ['skeleton', 'goblin'], itemDensity: 'medium', keysRequired: 1 },
+  { enemyMin: 10, enemyMax: 15, types: ['skeleton', 'goblin', 'troll'], trollMax: 2, itemDensity: 'medium', keysRequired: 2 },
+  { enemyMin: 12, enemyMax: 18, types: ['skeleton', 'goblin', 'troll'], trollMax: 4, itemDensity: 'low', keysRequired: 2 },
+  { enemyMin: 15, enemyMax: 20, types: ['skeleton', 'goblin', 'troll'], trollMax: 6, boss: true, itemDensity: 'low', keysRequired: 3 }
 ];
 
 // Enemy stats
