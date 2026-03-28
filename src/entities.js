@@ -1,5 +1,5 @@
 // Entity System - Player, Enemy, Item classes
-import { CONFIG, COLORS, ENEMY_STATS, WEAPONS, AI_STATE, FLOOR_CONFIG, TILE } from './constants.js';
+import { CONFIG, COLORS, ENEMY_STATS, WEAPONS, ARMORS, AI_STATE, FLOOR_CONFIG, TILE } from './constants.js';
 import { isWalkable } from './dungeon.js';
 
 // Player class
@@ -16,6 +16,8 @@ export class Player {
     this.level = 1;
     this.strength = 2;
     this.weapon = { ...WEAPONS.fists };
+    this.armor = null; // { name, defense }
+    this.defense = 0;
     this.kills = 0;
     this.causeOfDeath = '';
     this.lastDamageTime = 0;
@@ -89,7 +91,7 @@ export class Enemy {
   }
 }
 
-// Boss enemy (special Troll on floor 5)
+// Boss enemy (special Troll on floor 5) with phase system
 export class BossEnemy extends Enemy {
   constructor(x, y) {
     super(x, y, 'troll');
@@ -99,6 +101,40 @@ export class BossEnemy extends Enemy {
     this.baseDamage = 12;
     this.xpValue = 50;
     this.isBoss = true;
+    this.phase = 1;
+    this.baseMovMs = 700;
+  }
+
+  // Update boss phase based on HP thresholds
+  updatePhase() {
+    const hpRatio = this.hp / this.maxHp;
+    let newPhase;
+    if (hpRatio > 0.75) newPhase = 1;
+    else if (hpRatio > 0.50) newPhase = 2;
+    else if (hpRatio > 0.25) newPhase = 3;
+    else newPhase = 4;
+
+    if (newPhase !== this.phase) {
+      this.phase = newPhase;
+      switch (newPhase) {
+        case 2: // Faster
+          this.moveMs = Math.round(this.baseMovMs * 0.8);
+          this.name = 'The Ancient One (Enraged)';
+          break;
+        case 3: // Stronger + faster
+          this.moveMs = Math.round(this.baseMovMs * 0.6);
+          this.baseDamage = 16;
+          this.name = 'The Ancient One (Furious)';
+          break;
+        case 4: // Desperate - very fast, max damage
+          this.moveMs = Math.round(this.baseMovMs * 0.4);
+          this.baseDamage = 20;
+          this.name = 'The Ancient One (Desperate)';
+          break;
+      }
+      return true; // Phase changed
+    }
+    return false;
   }
 }
 
@@ -233,24 +269,30 @@ export function spawnItems(floor, itemSpawns, rng) {
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  // Available weapons for this floor
+  // Available weapons and armor for this floor
   const availableWeapons = Object.entries(WEAPONS)
     .filter(([key, w]) => key !== 'fists' && w.minFloor <= floor);
+  const availableArmors = Object.entries(ARMORS)
+    .filter(([key, a]) => a.minFloor <= floor);
 
   for (let i = 0; i < Math.min(maxItems, shuffled.length); i++) {
     const spawn = shuffled[i];
     const roll = rng();
 
-    if (roll < 0.5) {
+    if (roll < 0.45) {
       // Health potion
       items.push(new Item(spawn.x, spawn.y, 'potion', 'health', {
         name: 'Health Potion',
         healAmount: CONFIG.POTION_HEAL
       }));
-    } else if (roll < 0.75 && availableWeapons.length > 0) {
+    } else if (roll < 0.65 && availableWeapons.length > 0) {
       // Weapon
       const [key, weapon] = availableWeapons[Math.floor(rng() * availableWeapons.length)];
       items.push(new Item(spawn.x, spawn.y, 'weapon', key, { ...weapon }));
+    } else if (roll < 0.80 && availableArmors.length > 0) {
+      // Armor
+      const [key, armor] = availableArmors[Math.floor(rng() * availableArmors.length)];
+      items.push(new Item(spawn.x, spawn.y, 'armor', key, { ...armor }));
     } else {
       // Scroll of Blinding
       items.push(new Item(spawn.x, spawn.y, 'scroll', 'blinding', {

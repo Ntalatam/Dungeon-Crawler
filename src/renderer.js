@@ -545,6 +545,25 @@ export class Renderer {
       ctx.fillRect(px - 3, py - 3 + hover, 6, 1);
       ctx.fillRect(px - 3, py + hover, 6, 1);
       ctx.fillRect(px - 3, py + 3 + hover, 6, 1);
+    } else if (item.type === 'armor') {
+      // Shield shape
+      ctx.shadowColor = COLORS.ITEM_ARMOR;
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = COLORS.ITEM_ARMOR;
+      ctx.beginPath();
+      ctx.moveTo(px, py - 6 + hover);
+      ctx.lineTo(px + 6, py - 3 + hover);
+      ctx.lineTo(px + 5, py + 3 + hover);
+      ctx.lineTo(px, py + 7 + hover);
+      ctx.lineTo(px - 5, py + 3 + hover);
+      ctx.lineTo(px - 6, py - 3 + hover);
+      ctx.closePath();
+      ctx.fill();
+      // Inner highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.beginPath();
+      ctx.arc(px - 1, py - 2 + hover, 2, 0, Math.PI * 2);
+      ctx.fill();
     } else if (item.type === 'key') {
       // Gold key with glow
       ctx.shadowColor = '#ffd700';
@@ -563,7 +582,7 @@ export class Renderer {
 
     // Colorblind mode: letter overlay on items
     if (this.colorblindMode) {
-      const letters = { potion: 'P', weapon: 'W', scroll: 'S', key: 'K' };
+      const letters = { potion: 'P', weapon: 'W', scroll: 'S', key: 'K', armor: 'A' };
       const letter = letters[item.type] || '?';
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.font = 'bold 10px monospace';

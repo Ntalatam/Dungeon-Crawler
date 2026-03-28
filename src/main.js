@@ -1,5 +1,5 @@
 // Dungeon Crawler - Entry Point & Game Loop
-import { CONFIG, STATE, TILE, FLOOR_CONFIG } from './constants.js';
+import { CONFIG, STATE, TILE, FLOOR_CONFIG, DIFFICULTY, COLORS } from './constants.js';
 import { generateDungeon, isWalkable, mulberry32 } from './dungeon.js';
 import { Renderer } from './renderer.js';
 import { computeFOV, updateExplored, createExploredMap } from './fov.js';
@@ -50,6 +50,8 @@ let gameStartTime = 0;
 let lastMoveProcessTime = 0;
 let mainMenuHover = '';         // 'start', 'help', 'store', or ''
 let showStore = false;
+let difficulty = 'normal';      // 'easy', 'normal', 'hard'
+let customSeed = null;          // null = random, number = fixed seed
 
 // Key progression
 let keysCollected = 0;
@@ -75,7 +77,7 @@ let highScores = loadHighScores();
 // ---- Input handling ----
 const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
   'w', 'W', 'a', 'A', 's', 'S', 'd', 'D', 'e', 'E', 'q', 'Q', 'z', 'Z', 'c', 'C',
-  'f', 'F', 'r', 'R', 'b', 'B',
+  'f', 'F', 'r', 'R', 'b', 'B', 't', 'T',
   ' ', '.', '>', 'Enter', 'Escape', '?', '/', 'i', 'I', 'm', 'M']);
 
 // Normalize key to lowercase for direction tracking
@@ -136,6 +138,30 @@ document.addEventListener('keydown', (e) => {
     if (nk === '?' || nk === 'i') {
       showHowToPlay = true;
       howToPlayScroll = 0;
+      return;
+    }
+    // Difficulty cycle
+    if (nk === 'd') {
+      const modes = ['easy', 'normal', 'hard'];
+      const idx = modes.indexOf(difficulty);
+      difficulty = modes[(idx + 1) % modes.length];
+      return;
+    }
+    // Custom seed input
+    if (nk === 's') {
+      const input = window.prompt('Enter a seed (number or text):', '');
+      if (input !== null && input.trim() !== '') {
+        const num = parseInt(input.trim(), 10);
+        customSeed = isNaN(num) ? hashString(input.trim()) : num;
+      } else {
+        customSeed = null;
+      }
+      return;
+    }
+    // Daily run (date-based seed)
+    if (nk === 't') {
+      const today = new Date();
+      customSeed = today.getFullYear() * 10000 + (today.getMonth() + 1) * 100 + today.getDate();
       return;
     }
     if (e.key === 'Enter') {
@@ -269,13 +295,13 @@ function handleMainMenuClick(mx, my) {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
   // Start button area (matches ui.js layout)
-  const startBtnY = cy + 130;
+  const startBtnY = cy + 140;
   if (mx >= cx - 150 && mx <= cx + 150 && my >= startBtnY - 23 && my <= startBtnY + 23) {
     startNewGame();
     return;
   }
   // Store button area
-  const storeBtnY = cy + 194;
+  const storeBtnY = cy + 204;
   if (mx >= cx - 100 && mx <= cx + 100 && my >= storeBtnY - 19 && my <= storeBtnY + 19) {
     showStore = true;
     return;
@@ -321,8 +347,8 @@ canvas.addEventListener('mousemove', (e) => {
     }
     const cx = canvas.width / 2;
     const cy = canvas.height / 2;
-    const startBtnY = cy + 130;
-    const storeBtnY = cy + 194;
+    const startBtnY = cy + 140;
+    const storeBtnY = cy + 204;
     const iconX = canvas.width - 55;
     const iconY = canvas.height - 50;
     if (mx >= cx - 150 && mx <= cx + 150 && my >= startBtnY - 23 && my <= startBtnY + 23) {
@@ -431,9 +457,19 @@ function handlePauseInput(key) {
   }
 }
 
+// Simple string hash for text seeds
+function hashString(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) - hash) + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return Math.abs(hash);
+}
+
 // ---- Game initialization ----
 function startNewGame() {
-  seed = Date.now();
+  seed = customSeed !== null ? customSeed : Date.now();
   floor = 1;
   player = null;
   gameEnded = false;
@@ -470,8 +506,16 @@ function initFloor() {
     player.renderY = player.y;
   }
 
-  // Spawn entities
+  // Spawn entities with difficulty scaling
+  const diff = DIFFICULTY[difficulty];
   enemies = spawnEnemies(floor, dungeon.entitySpawns, rooms, rng);
+  // Apply difficulty multipliers to enemies
+  for (const enemy of enemies) {
+    enemy.hp = Math.round(enemy.hp * diff.enemyHpMult);
+    enemy.maxHp = enemy.hp;
+    enemy.baseDamage = Math.round(enemy.baseDamage * diff.enemyDmgMult);
+    enemy.xpValue = Math.round(enemy.xpValue * diff.xpMult);
+  }
   items = spawnItems(floor, dungeon.itemSpawns, rng);
 
   // Key progression system
@@ -762,7 +806,12 @@ function saveHighScores() {
 function getItemDescription(item) {
   switch (item.type) {
     case 'potion': return `Restores ${item.data.healAmount} HP`;
-    case 'weapon': return `${item.data.minDamage}-${item.data.maxDamage} damage`;
+    case 'weapon': {
+      let desc = `${item.data.minDamage}-${item.data.maxDamage} damage`;
+      if (item.data.cursed) desc += ` (cursed: -${item.data.hpDrain} HP/hit)`;
+      return desc;
+    }
+    case 'armor': return `+${item.data.defense} defense`;
     case 'scroll': return `Blinds nearest enemy`;
     case 'key': return `Unlocks the stairs`;
     default: return '';
@@ -806,7 +855,7 @@ function drawItemTooltip(ctx, item, sx, sy) {
   // Border
   const borderColors = {
     potion: COLORS.ITEM_POTION, weapon: COLORS.ITEM_WEAPON,
-    scroll: COLORS.ITEM_SCROLL, key: '#ffd700'
+    scroll: COLORS.ITEM_SCROLL, armor: COLORS.ITEM_ARMOR, key: '#ffd700'
   };
   ctx.strokeStyle = borderColors[item.type] || '#666';
   ctx.lineWidth = 1;
@@ -901,7 +950,7 @@ function gameLoop(timestamp) {
 
   switch (state) {
     case STATE.MAIN_MENU:
-      drawMainMenu(ctx, canvas, highScores, mainMenuHover);
+      drawMainMenu(ctx, canvas, highScores, mainMenuHover, difficulty, customSeed);
       if (showStore) {
         drawStore(ctx, canvas);
       } else if (showHowToPlay) {

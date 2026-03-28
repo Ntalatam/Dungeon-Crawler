@@ -144,8 +144,11 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   const statsX = floorX + 230;
   ctx.fillStyle = COLORS.HUD_TEXT;
   ctx.font = '12px monospace';
-  ctx.fillText(`STR: ${player.strength}`, statsX, hudY + 22);
-  ctx.fillText(`Kills: ${player.kills}`, statsX, hudY + 42);
+  ctx.fillText(`STR: ${player.strength}`, statsX, hudY + 16);
+  ctx.fillStyle = COLORS.ITEM_ARMOR;
+  ctx.fillText(`DEF: ${player.defense}`, statsX, hudY + 32);
+  ctx.fillStyle = COLORS.HUD_TEXT;
+  ctx.fillText(`Kills: ${player.kills}`, statsX, hudY + 48);
 
   // Key counter (next to floor)
   if (keysRequired > 0) {
@@ -195,14 +198,19 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.fillRect(guideX, hudY + 35, 8, 8);
   ctx.fillStyle = '#aaa';
   ctx.fillText('Scroll: blinds (F)', guideX + 14, hudY + 42);
+  // Armor
+  ctx.fillStyle = COLORS.ITEM_ARMOR;
+  ctx.fillRect(guideX, hudY + 36, 8, 8);
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('Armor (press F)', guideX + 14, hudY + 43);
   // Key
   ctx.fillStyle = '#ffd700';
   ctx.beginPath();
-  ctx.arc(guideX + 4, hudY + 50, 3, 0, Math.PI * 2);
+  ctx.arc(guideX + 4, hudY + 53, 3, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillRect(guideX + 2, hudY + 53, 3, 4);
+  ctx.fillRect(guideX + 2, hudY + 56, 3, 4);
   ctx.fillStyle = '#aaa';
-  ctx.fillText('Key: unlocks stairs (auto)', guideX + 14, hudY + 54);
+  ctx.fillText('Key (auto)', guideX + 14, hudY + 57);
 
   // Minimap hint (visible, below minimap area)
   ctx.fillStyle = '#666';
@@ -245,7 +253,7 @@ function ensureMenuParticles(canvas) {
 }
 
 // Draw main menu screen
-export function drawMainMenu(ctx, canvas, highScores, hoverState = '') {
+export function drawMainMenu(ctx, canvas, highScores, hoverState = '', difficulty = 'normal', customSeed = null) {
   // Gradient background
   const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
   grad.addColorStop(0, '#0a0a18');
@@ -311,9 +319,9 @@ export function drawMainMenu(ctx, canvas, highScores, hoverState = '') {
   const ctrlY = cy - 40;
   const ctrlSpacing = 26;
   const controls = [
-    ['WASD', 'Move', 'E', 'Pick up'],
-    ['Bump', 'Attack', 'SPACE', 'Wait'],
-    ['ENTER', 'Descend', 'ESC', 'Pause'],
+    ['WASD', 'Move', 'F', 'Pick up'],
+    ['Q/E/Z/C', 'Diagonal', 'SPACE', 'Wait'],
+    ['Bump', 'Attack', 'ESC', 'Pause'],
   ];
   for (let i = 0; i < controls.length; i++) {
     const [k1, v1, k2, v2] = controls[i];
@@ -342,8 +350,21 @@ export function drawMainMenu(ctx, canvas, highScores, hoverState = '') {
     );
   }
 
+  // Difficulty and seed options
+  ctx.textAlign = 'center';
+  const diffLabel = { easy: 'Easy', normal: 'Normal', hard: 'Hard' }[difficulty] || 'Normal';
+  const diffColor = { easy: '#06d6a0', normal: COLORS.PLAYER, hard: '#e63946' }[difficulty] || COLORS.PLAYER;
+  ctx.fillStyle = diffColor;
+  ctx.font = 'bold 14px monospace';
+  ctx.fillText(`[D] Difficulty: ${diffLabel}`, cx, cy + 92);
+
+  ctx.fillStyle = '#777';
+  ctx.font = '12px monospace';
+  const seedText = customSeed !== null ? `Seed: ${customSeed}` : 'Seed: Random';
+  ctx.fillText(`[S] ${seedText}   [T] Daily Run`, cx, cy + 112);
+
   // Start button — larger
-  const btnY = cy + 130;
+  const btnY = cy + 140;
   const btnW = 300;
   const btnH = 46;
   const isStartHover = hoverState === 'start';
@@ -373,7 +394,7 @@ export function drawMainMenu(ctx, canvas, highScores, hoverState = '') {
   ctx.fillText('ENTER  \u2014  Start Game', cx, btnY + 7);
 
   // Store button — below start
-  const storeBtnY = cy + 194;
+  const storeBtnY = cy + 204;
   const storeBtnW = 200;
   const storeBtnH = 38;
   const isStoreHover = hoverState === 'store';
@@ -511,7 +532,11 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('  Dagger (2-5 dmg)  |  Shortsword (2-6)  |  Longsword (3-8, Floor 2+)');
   line('  Battle Axe (5-12 dmg, Floor 3+)');
   line('Scrolls (purple)      : Press F to use. Blinds nearest enemy.', COLORS.ITEM_SCROLL);
+  line('Armor (silver shield)  : Press F to equip. Reduces incoming damage.', COLORS.ITEM_ARMOR);
+  line('  Leather (+1)  |  Chainmail (+2)  |  Plate (+3, F3+)  |  Dragonscale (+5, F4+)');
   line('Floor Keys (gold)     : Auto-picked up. Required to unlock the stairs.', '#ffd700');
+  gap();
+  line('Cursed items have powerful stats but drain HP when you attack!', '#8b00ff');
 
   // --- Enemies ---
   heading('ENEMIES');
@@ -550,6 +575,8 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('Floor 3: Trolls appear! Battle Axes available. 2 keys needed.');
   line('Floor 4: More trolls, fewer items. 2 keys needed.');
   line('Floor 5: 15-20 enemies + The Ancient One (boss). 3 keys needed.');
+  gap();
+  line('The Ancient One has 4 phases - gets faster and stronger as HP drops!');
 
   // --- HUD ---
   heading('READING THE SCREEN');
@@ -569,6 +596,9 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('Hover your mouse over enemies to see their HP and status.');
   line('Press B for colorblind mode (letter indicators on enemies/items).');
   line('The game has procedural audio - sound effects are generated live.');
+  line('Press D on the main menu to change difficulty (Easy/Normal/Hard).');
+  line('Press S on the main menu to enter a custom seed for seeded runs.');
+  line('Press T on the main menu for a Daily Run (same seed for everyone!).');
 
   // --- Controls Reference ---
   heading('CONTROLS');

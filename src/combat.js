@@ -1,5 +1,5 @@
 // Combat System - Hit resolution, damage, death, loot
-import { CONFIG, COLORS, WEAPONS } from './constants.js';
+import { CONFIG, COLORS, WEAPONS, ARMORS } from './constants.js';
 import { Item } from './entities.js';
 import { mulberry32 } from './dungeon.js';
 import { playHit, playMiss, playEnemyDeath, playPlayerHit, playLevelUp, playPickup, playKeyPickup } from './audio.js';
@@ -29,9 +29,27 @@ export function playerAttack(player, enemy, rng, messageLog, renderer) {
   enemy.hitFlash = 150;
   playHit();
 
+  // Cursed weapon HP drain
+  if (player.weapon.cursed && player.weapon.hpDrain) {
+    const drain = player.weapon.hpDrain;
+    player.hp -= drain;
+    if (player.hp < 1) player.hp = 1; // Cursed weapons can't kill you directly
+    renderer.addEffect(player.x, player.y, `-${drain}`, '#8b00ff');
+  }
+
   if (enemy.hp <= 0) {
     enemy.hp = 0;
     return handleEnemyDeath(player, enemy, rng, messageLog, renderer);
+  }
+
+  // Boss phase transitions
+  if (enemy.isBoss && enemy.updatePhase) {
+    const phaseChanged = enemy.updatePhase();
+    if (phaseChanged) {
+      messageLog.add(`${enemy.name} enters phase ${enemy.phase}!`);
+      renderer.shake(8, 0.85);
+      renderer.flash('#ff4444', 300);
+    }
   }
 
   return false; // enemy not killed
@@ -63,13 +81,15 @@ function handleEnemyDeath(player, enemy, rng, messageLog, renderer) {
 // Enemy attacks the player
 export function enemyAttack(enemy, player, rng, messageLog, renderer) {
   const baseDamage = enemy.baseDamage;
-  const damage = baseDamage + Math.floor(rng() * 3);
+  const rawDamage = baseDamage + Math.floor(rng() * 3);
+  const damage = Math.max(1, rawDamage - player.defense);
 
   player.hp -= damage;
   if (player.hp < 0) player.hp = 0;
   player.lastDamageTime = Date.now();
 
-  messageLog.add(`The ${enemy.name} hits you for ${damage} damage!`);
+  const defText = player.defense > 0 ? ` (${player.defense} blocked)` : '';
+  messageLog.add(`The ${enemy.name} hits you for ${damage} damage!${defText}`);
   renderer.addEffect(player.x, player.y, `-${damage}`, COLORS.DAMAGE_TEXT);
   renderer.flash('#e63946', 200);
   renderer.shake(5, 0.86);
@@ -115,6 +135,20 @@ export function pickupItem(player, item, items, messageLog, renderer) {
       messageLog.add(`You read the ${item.name}!`);
       // The blind effect is applied by the caller (main.js)
       break;
+
+    case 'armor': {
+      const newDef = item.data.defense;
+      if (newDef > player.defense) {
+        player.armor = { ...item.data };
+        player.defense = newDef;
+        messageLog.add(`You equip ${item.name}! (+${newDef} defense)`);
+        renderer.addEffect(player.x, player.y, `+${newDef} DEF`, COLORS.ITEM_ARMOR);
+      } else {
+        messageLog.add(`${item.name} is weaker than your current armor.`);
+      }
+      playPickup();
+      break;
+    }
 
     case 'key':
       messageLog.add('You found a Floor Key!');

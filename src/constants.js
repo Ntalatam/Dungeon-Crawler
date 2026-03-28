@@ -34,6 +34,7 @@ export const COLORS = {
   ITEM_WEAPON: '#90e0ef',
   ITEM_POTION: '#e63946',
   ITEM_SCROLL: '#b185db',
+  ITEM_ARMOR: '#c0c0c0',
   STAIRS: '#ffc300',
   STAIRS_LOCKED: '#666666',
   KEY: '#ffd700',
@@ -111,7 +112,23 @@ export const WEAPONS = {
   dagger: { name: 'Dagger', minDamage: 2, maxDamage: 5, speedBonus: 1, minFloor: 1 },
   shortsword: { name: 'Shortsword', minDamage: 2, maxDamage: 6, speedBonus: 0, minFloor: 1 },
   longsword: { name: 'Longsword', minDamage: 3, maxDamage: 8, speedBonus: 0, minFloor: 2 },
-  battleaxe: { name: 'Battle Axe', minDamage: 5, maxDamage: 12, speedBonus: -1, minFloor: 3 }
+  battleaxe: { name: 'Battle Axe', minDamage: 5, maxDamage: 12, speedBonus: -1, minFloor: 3 },
+  cursed_blade: { name: 'Cursed Blade', minDamage: 6, maxDamage: 14, speedBonus: 0, minFloor: 2, cursed: true, hpDrain: 2 }
+};
+
+// Armor definitions
+export const ARMORS = {
+  leather: { name: 'Leather Armor', defense: 1, minFloor: 1 },
+  chainmail: { name: 'Chainmail', defense: 2, minFloor: 2 },
+  plate: { name: 'Plate Armor', defense: 3, minFloor: 3 },
+  dragonscale: { name: 'Dragonscale Armor', defense: 5, minFloor: 4 }
+};
+
+// Difficulty presets
+export const DIFFICULTY = {
+  easy: { label: 'Easy', enemyHpMult: 0.7, enemyDmgMult: 0.7, itemMult: 1.3, xpMult: 1.2 },
+  normal: { label: 'Normal', enemyHpMult: 1.0, enemyDmgMult: 1.0, itemMult: 1.0, xpMult: 1.0 },
+  hard: { label: 'Hard', enemyHpMult: 1.4, enemyDmgMult: 1.3, itemMult: 0.7, xpMult: 0.8 }
 };
 
 // Game states
