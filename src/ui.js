@@ -513,9 +513,9 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
 
   // --- Enemies ---
   heading('ENEMIES');
-  line('Skeleton (beige)  - 30 HP, slow. Fights to the death.', COLORS.SKELETON);
-  line('Goblin (green)    - 12 HP, fast. Flees when below 25% HP.', COLORS.GOBLIN);
-  line('Troll (brown)     - 60 HP, very slow, heavy damage. Floor 3+.', COLORS.TROLL);
+  line('Skeleton (beige)  - 38 HP, slow. Fights to the death.', COLORS.SKELETON);
+  line('Goblin (green)    - 15 HP, fast. Flees when below 25% HP.', COLORS.GOBLIN);
+  line('Troll (brown)     - 75 HP, very slow, heavy damage. Floor 3+.', COLORS.TROLL);
   gap();
   line('Elite enemies have crowns, larger bodies, and stronger stats.');
   line('Enemy dots: gray = idle, red = chasing you, yellow = fleeing.');

@@ -80,18 +80,19 @@ export function enemyAttack(enemy, player, rng, messageLog, renderer) {
 // Pick up an item
 export function pickupItem(player, item, items, messageLog, renderer) {
   switch (item.type) {
-    case 'weapon':
+    case 'weapon': {
       // Equip if better than current weapon
       const newAvg = (item.data.minDamage + item.data.maxDamage) / 2;
       const curAvg = (player.weapon.minDamage + player.weapon.maxDamage) / 2;
-      player.weapon = { ...item.data };
       if (newAvg > curAvg) {
+        player.weapon = { ...item.data };
         messageLog.add(`You found a ${item.name}! Equipped!`);
       } else {
-        messageLog.add(`You found a ${item.name}. Equipped.`);
+        messageLog.add(`You found a ${item.name}. Not better than your ${player.weapon.name}.`);
       }
       renderer.addEffect(item.x, item.y, item.name, COLORS.ITEM_WEAPON);
       break;
+    }
 
     case 'potion':
       const healed = Math.min(item.data.healAmount, player.maxHp - player.hp);

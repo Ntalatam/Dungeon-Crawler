@@ -231,11 +231,11 @@ export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
       break;
 
     case AI_STATE.CHASE:
-      action = doChase(enemy, player, map, enemies, currentTime);
+      action = doChase(enemy, player, map, enemies, currentTime, rng);
       break;
 
     case AI_STATE.ATTACK:
-      action = doAttack(enemy, player, map, enemies, currentTime);
+      action = doAttack(enemy, player, map, enemies, currentTime, rng);
       break;
 
     case AI_STATE.FLEEING:
@@ -307,9 +307,9 @@ function doPatrol(enemy, map, enemies, currentTime, rng) {
 }
 
 // Chase behavior: use A* to pursue player
-function doChase(enemy, player, map, enemies, currentTime) {
+function doChase(enemy, player, map, enemies, currentTime, rng) {
   // Hesitation: non-goblins sometimes pause (sizing up the player)
-  if (enemy.type !== 'goblin' && Math.random() < 0.15) {
+  if (enemy.type !== 'goblin' && rng() < 0.15) {
     enemy.lastMoveTime = currentTime;
     return null; // Skip turn — looks like caution
   }
@@ -349,16 +349,16 @@ function doChase(enemy, player, map, enemies, currentTime) {
 }
 
 // Attack behavior: deal damage to player, with occasional repositioning
-function doAttack(enemy, player, map, enemies, currentTime) {
+function doAttack(enemy, player, map, enemies, currentTime, rng) {
   if (enemy.attackCooldown > 0) {
-    enemy.attackCooldown -= CONFIG.GOBLIN_MOVE_MS;
+    enemy.attackCooldown -= enemy.moveMs;
     return null;
   }
 
   // 20% chance to reposition instead of attack (circling/flanking)
   // Makes fights feel more dynamic — enemy moves to another adjacent tile
-  if (Math.random() < 0.20) {
-    return doReposition(enemy, player, map, enemies, currentTime);
+  if (rng() < 0.20) {
+    return doReposition(enemy, player, map, enemies, currentTime, rng);
   }
 
   enemy.lastMoveTime = currentTime;
@@ -367,7 +367,7 @@ function doAttack(enemy, player, map, enemies, currentTime) {
 }
 
 // Reposition: move to a different tile adjacent to the player
-function doReposition(enemy, player, map, enemies, currentTime) {
+function doReposition(enemy, player, map, enemies, currentTime, rng) {
   const candidates = [];
   for (const dir of DIRS) {
     const nx = player.x + dir.x;
@@ -383,7 +383,7 @@ function doReposition(enemy, player, map, enemies, currentTime) {
     enemy.attackCooldown = enemy.moveMs;
     return { type: 'attack', enemy };
   }
-  const target = candidates[Math.floor(Math.random() * candidates.length)];
+  const target = candidates[Math.floor(rng() * candidates.length)];
   enemy.x = target.x;
   enemy.y = target.y;
   enemy.lastMoveTime = currentTime;
