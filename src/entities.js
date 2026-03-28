@@ -74,7 +74,9 @@ export class Enemy {
     this.patrolTarget = null;
     this.blindUntil = 0; // Timestamp when blind expires
     this.spawnRoom = null;
-    this.recovering = false; // Recovery frame: skip next turn after moving
+    this.isRanged = stats.ranged || false;
+    this.attackRange = stats.range || 1;
+    this.lastRangedAttack = 0;
   }
 
   get isAlive() {
@@ -113,6 +115,7 @@ function promoteToMiniBoss(enemy) {
     skeleton: COLORS.ELITE_SKELETON,
     goblin: COLORS.ELITE_GOBLIN,
     troll: COLORS.ELITE_TROLL,
+    archer: COLORS.ELITE_ARCHER,
   };
   enemy.color = eliteColors[enemy.type] || enemy.color;
 }
@@ -143,7 +146,9 @@ export function spawnEnemies(floor, entitySpawns, rooms, rng) {
   }
 
   let trollCount = 0;
+  let archerCount = 0;
   const maxTrolls = config.trollMax || 0;
+  const maxArchers = config.archerMax || 0;
 
   for (let i = 0; i < Math.min(count, shuffled.length); i++) {
     const spawn = shuffled[i];
@@ -152,11 +157,13 @@ export function spawnEnemies(floor, entitySpawns, rooms, rng) {
     // Pick enemy type from available types
     const availableTypes = config.types.filter(t => {
       if (t === 'troll' && trollCount >= maxTrolls) return false;
+      if (t === 'archer' && archerCount >= maxArchers) return false;
       return true;
     });
 
     type = availableTypes[Math.floor(rng() * availableTypes.length)];
     if (type === 'troll') trollCount++;
+    if (type === 'archer') archerCount++;
 
     const enemy = new Enemy(spawn.x, spawn.y, type);
     enemy.spawnRoom = spawn.room;

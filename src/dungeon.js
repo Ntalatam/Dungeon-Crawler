@@ -88,7 +88,8 @@ function createRoom(node, rng) {
 
   return {
     x, y, width: w, height: h,
-    center: { x: Math.floor(x + w / 2), y: Math.floor(y + h / 2) }
+    center: { x: Math.floor(x + w / 2), y: Math.floor(y + h / 2) },
+    type: 'normal' // Will be assigned after generation
   };
 }
 
@@ -283,6 +284,21 @@ export function generateDungeon(seed, floor) {
   // Stairs down at end room center
   map[endRoom.center.y][endRoom.center.x] = TILE.STAIRS_DOWN;
 
+  // Assign tactical room types (skip start and end rooms)
+  const normalRooms = rooms.filter(r => r !== startRoom && r !== endRoom);
+  for (const room of normalRooms) {
+    const roll = rng();
+    if (roll < 0.12) {
+      room.type = 'treasure'; // Extra items, fewer enemies
+    } else if (roll < 0.24) {
+      room.type = 'guardpost'; // More enemies, better loot chance
+    } else if (roll < 0.30) {
+      room.type = 'safe'; // No enemies, healing fountain
+    } else {
+      room.type = 'normal';
+    }
+  }
+
   // Generate spawn points for entities and items
   const entitySpawns = [];
   const itemSpawns = [];
@@ -290,17 +306,65 @@ export function generateDungeon(seed, floor) {
   for (const room of rooms) {
     if (room === startRoom) continue; // Don't spawn in start room
 
-    const spawnCount = randInt(rng, 1, 3);
-    const spawns = getRoomSpawnPoints(room, spawnCount + 2, rng);
+    // Adjust spawn counts based on room type
+    let enemyCount, itemCount;
+    switch (room.type) {
+      case 'treasure':
+        enemyCount = randInt(rng, 0, 1);
+        itemCount = randInt(rng, 3, 5);
+        break;
+      case 'guardpost':
+        enemyCount = randInt(rng, 3, 5);
+        itemCount = randInt(rng, 0, 1);
+        break;
+      case 'safe':
+        enemyCount = 0;
+        itemCount = randInt(rng, 1, 2);
+        break;
+      default:
+        enemyCount = randInt(rng, 1, 3);
+        itemCount = 2;
+        break;
+    }
+
+    const spawns = getRoomSpawnPoints(room, enemyCount + itemCount, rng);
 
     // First points for enemies
-    for (let i = 0; i < Math.min(spawnCount, spawns.length); i++) {
+    for (let i = 0; i < Math.min(enemyCount, spawns.length); i++) {
       entitySpawns.push({ ...spawns[i], room });
     }
 
     // Remaining points for items
-    for (let i = spawnCount; i < spawns.length; i++) {
+    for (let i = enemyCount; i < spawns.length; i++) {
       itemSpawns.push({ ...spawns[i], room });
+    }
+  }
+
+  // Place environmental hazards (floor 2+)
+  if (floor >= 2) {
+    for (const room of rooms) {
+      if (room === startRoom || room === endRoom) continue;
+      if (room.type === 'safe') continue; // Safe rooms have no hazards
+
+      // Pick a hazard type for this room (or none)
+      const hazardRoll = rng();
+      let hazardType = null;
+      if (hazardRoll < 0.08) hazardType = TILE.LAVA;
+      else if (hazardRoll < 0.16) hazardType = TILE.ICE;
+      else if (hazardRoll < 0.24) hazardType = TILE.SPIKE_TRAP;
+
+      if (hazardType) {
+        // Place 2-5 hazard tiles randomly in the room interior
+        const count = randInt(rng, 2, 5);
+        for (let h = 0; h < count; h++) {
+          const hx = randInt(rng, room.x + 1, room.x + room.width - 2);
+          const hy = randInt(rng, room.y + 1, room.y + room.height - 2);
+          // Don't overwrite stairs or doors
+          if (map[hy][hx] === TILE.FLOOR) {
+            map[hy][hx] = hazardType;
+          }
+        }
+      }
     }
   }
 
@@ -318,5 +382,6 @@ export function generateDungeon(seed, floor) {
 // Check if a tile is walkable
 export function isWalkable(tile) {
   return tile === TILE.FLOOR || tile === TILE.CORRIDOR || tile === TILE.DOOR ||
-         tile === TILE.STAIRS_DOWN || tile === TILE.STAIRS_UP;
+         tile === TILE.STAIRS_DOWN || tile === TILE.STAIRS_UP ||
+         tile === TILE.LAVA || tile === TILE.ICE || tile === TILE.SPIKE_TRAP;
 }

@@ -497,6 +497,7 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   // --- Movement & Combat ---
   heading('MOVEMENT & COMBAT');
   line('WASD or Arrow Keys to move in 4 directions.');
+  line('Q/E/Z/C to move diagonally (NW/NE/SW/SE).');
   line('Enemies move in real time — they will hunt you even if you stand still!');
   line('Walk INTO an enemy to attack (bump attack). No attack key needed.');
   line('You have an 85% hit chance. Damage = weapon + strength bonus.');
@@ -504,17 +505,18 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
 
   // --- Items ---
   heading('ITEMS');
-  line('Health Potions (red heart) : Auto-picked up on walk-over. +20 HP.', COLORS.ITEM_POTION);
-  line('Weapons (blue sword)  : Press E to equip. Better weapons on deeper floors.', COLORS.ITEM_WEAPON);
+  line('Health Potions (red heart) : Press F to use. +20 HP.', COLORS.ITEM_POTION);
+  line('Weapons (blue sword)  : Press F to equip. Better weapons on deeper floors.', COLORS.ITEM_WEAPON);
   line('  Dagger (2-5 dmg)  |  Shortsword (2-6)  |  Longsword (3-8, Floor 2+)');
   line('  Battle Axe (5-12 dmg, Floor 3+)');
-  line('Scrolls (purple)      : Press E to use. Blinds nearest enemy.', COLORS.ITEM_SCROLL);
+  line('Scrolls (purple)      : Press F to use. Blinds nearest enemy.', COLORS.ITEM_SCROLL);
   line('Floor Keys (gold)     : Auto-picked up. Required to unlock the stairs.', '#ffd700');
 
   // --- Enemies ---
   heading('ENEMIES');
   line('Skeleton (beige)  - 45 HP, medium speed. Fights to the death.', COLORS.SKELETON);
   line('Goblin (green)    - 15 HP (scales per floor), fast. Flees at <25% HP.', COLORS.GOBLIN);
+  line('Archer (tan)      - 25 HP, ranged attacks from 5 tiles. Flees up close.', COLORS.ARCHER);
   line('Troll (brown)     - 75 HP, slow but hits hard (10 dmg). Floor 3+.', COLORS.TROLL);
   gap();
   line('Elite enemies have crowns, larger bodies, and stronger stats.');
@@ -526,11 +528,24 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('Kill enemies to earn XP. Level up for +5 max HP, +1 STR, full heal.');
   line('XP thresholds: Lv2=10, Lv3=25, Lv4=45, Lv5=70, Lv6=100, Lv7=140');
 
+  // --- Room Types ---
+  heading('ROOM TYPES');
+  line('Normal rooms   - Standard enemies and loot.');
+  line('Treasure rooms - Fewer enemies, lots of items. Worth exploring!');
+  line('Guard posts    - Heavy enemy presence, but better loot chance.');
+  line('Safe rooms     - No enemies or hazards. A place to rest.');
+
+  // --- Hazards ---
+  heading('ENVIRONMENTAL HAZARDS (Floor 2+)');
+  line('Lava (orange glow)  - Deals 5 damage when you step on it.', COLORS.LAVA);
+  line('Ice (light blue)    - Slide one tile in the same direction.', COLORS.ICE);
+  line('Spike Trap (gray)   - Deals 3 damage when you step on it.', COLORS.SPIKE_TRAP);
+
   // --- Floors ---
   heading('FLOOR PROGRESSION');
   line('Each floor requires keys to unlock the stairs. Explore to find them!');
   line('Floor 1: 5-8 enemies, lots of items. 1 key needed.');
-  line('Floor 2: 8-12 enemies. Longswords appear. 1 key needed.');
+  line('Floor 2: 8-12 enemies. Archers + Longswords appear. 1 key needed.');
   line('Floor 3: Trolls appear! Battle Axes available. 2 keys needed.');
   line('Floor 4: More trolls, fewer items. 2 keys needed.');
   line('Floor 5: 15-20 enemies + The Ancient One (boss). 3 keys needed.');
@@ -554,7 +569,8 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   // --- Controls Reference ---
   heading('CONTROLS');
   line('WASD / Arrows  -  Move / Attack (bump into enemy)');
-  line('E              -  Pick up item / Use scroll');
+  line('Q/E/Z/C        -  Diagonal movement (NW/NE/SW/SE)');
+  line('F              -  Pick up item / Use scroll');
   line('SPACE or .     -  Wait (skip turn)');
   line('ENTER or >     -  Descend stairs');
   line('ESC            -  Pause menu');

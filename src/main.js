@@ -71,7 +71,8 @@ let highScores = loadHighScores();
 
 // ---- Input handling ----
 const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-  'w', 'W', 'a', 'A', 's', 'S', 'd', 'D', 'e', 'E', 'r', 'R',
+  'w', 'W', 'a', 'A', 's', 'S', 'd', 'D', 'e', 'E', 'q', 'Q', 'z', 'Z', 'c', 'C',
+  'f', 'F', 'r', 'R',
   ' ', '.', '>', 'Enter', 'Escape', '?', '/', 'i', 'I', 'm', 'M']);
 
 // Normalize key to lowercase for direction tracking
@@ -80,12 +81,16 @@ function normalizeKey(key) {
   return key;
 }
 
-// Direction key mappings
+// Direction key mappings (4-way + diagonals)
 const DIRECTION_MAP = {
   'ArrowUp': { dx: 0, dy: -1 }, 'w': { dx: 0, dy: -1 },
   'ArrowDown': { dx: 0, dy: 1 }, 's': { dx: 0, dy: 1 },
   'ArrowLeft': { dx: -1, dy: 0 }, 'a': { dx: -1, dy: 0 },
   'ArrowRight': { dx: 1, dy: 0 }, 'd': { dx: 1, dy: 0 },
+  'q': { dx: -1, dy: -1 }, // NW
+  'e': { dx: 1, dy: -1 },  // NE
+  'z': { dx: -1, dy: 1 },  // SW
+  'c': { dx: 1, dy: 1 },   // SE
 };
 
 function isDirectionKey(key) {
@@ -512,7 +517,7 @@ function processInput() {
     pendingAction = null;
     switch (action) {
       case ' ': case '.': acted = true; break; // Wait
-      case 'e': tryPickup(); acted = true; break;
+      case 'f': tryPickup(); acted = true; break;
       case 'Enter': case '>': tryDescend(); return;
     }
   }
@@ -535,32 +540,82 @@ function processInput() {
     const newY = player.y + dy;
 
     if (newX >= 0 && newX < CONFIG.MAP_WIDTH && newY >= 0 && newY < CONFIG.MAP_HEIGHT) {
-      const targetEnemy = getEnemyAt(enemies, newX, newY);
-      if (targetEnemy) {
-        playerAttack(player, targetEnemy, rng, messageLog, renderer);
-        acted = true;
+      // Prevent diagonal corner-cutting through walls
+      const isDiagonal = dx !== 0 && dy !== 0;
+      const cornerBlocked = isDiagonal && (!isWalkable(map[player.y][newX]) || !isWalkable(map[newY][player.x]));
 
-        if (!targetEnemy.isAlive) {
-          const loot = generateLoot(targetEnemy, floor, rng);
-          if (loot) {
-            items.push(loot);
-            messageLog.add(`The ${targetEnemy.name} dropped a ${loot.name}!`);
+      if (!cornerBlocked) {
+        const targetEnemy = getEnemyAt(enemies, newX, newY);
+        if (targetEnemy) {
+          playerAttack(player, targetEnemy, rng, messageLog, renderer);
+          acted = true;
+
+          if (!targetEnemy.isAlive) {
+            const loot = generateLoot(targetEnemy, floor, rng);
+            if (loot) {
+              items.push(loot);
+              messageLog.add(`The ${targetEnemy.name} dropped a ${loot.name}!`);
+            }
           }
-        }
-      } else if (isWalkable(map[newY][newX])) {
-        player.x = newX;
-        player.y = newY;
-        moved = true;
-        acted = true;
+        } else if (isWalkable(map[newY][newX])) {
+          player.x = newX;
+          player.y = newY;
+          moved = true;
+          acted = true;
 
-        // Auto-pickup potions and keys
-        const groundItem = getItemAt(items, player.x, player.y);
-        if (groundItem && (groundItem.type === 'potion' || groundItem.type === 'key')) {
-          const pickedUp = pickupItem(player, groundItem, items, messageLog, renderer);
-          if (pickedUp && pickedUp.type === 'key') {
-            keysCollected++;
-            if (keysCollected >= keysRequired) {
-              messageLog.add('The stairs are now unlocked!');
+          // Apply hazard effects
+          const tile = map[player.y][player.x];
+          if (tile === TILE.LAVA) {
+            const lavaDmg = 5;
+            player.hp -= lavaDmg;
+            if (player.hp < 0) player.hp = 0;
+            player.lastDamageTime = Date.now();
+            messageLog.add(`The lava burns you! (-${lavaDmg} HP)`);
+            renderer.addEffect(player.x, player.y, `-${lavaDmg}`, '#ff6600');
+            renderer.flash('#ff3300', 150);
+            renderer.shake(3, 0.9);
+            player.hitFlash = 100;
+            if (player.hp <= 0) {
+              player.causeOfDeath = 'Burned to death by lava';
+              saveHighScores();
+              state = STATE.GAME_OVER;
+              return;
+            }
+          } else if (tile === TILE.ICE) {
+            // Slide one extra tile in the same direction (if walkable)
+            const slideX = player.x + dx;
+            const slideY = player.y + dy;
+            if (slideX >= 0 && slideX < CONFIG.MAP_WIDTH && slideY >= 0 && slideY < CONFIG.MAP_HEIGHT &&
+                isWalkable(map[slideY][slideX]) && !getEnemyAt(enemies, slideX, slideY)) {
+              player.x = slideX;
+              player.y = slideY;
+            }
+          } else if (tile === TILE.SPIKE_TRAP) {
+            const spikeDmg = 3;
+            player.hp -= spikeDmg;
+            if (player.hp < 0) player.hp = 0;
+            player.lastDamageTime = Date.now();
+            messageLog.add(`Spike trap! (-${spikeDmg} HP)`);
+            renderer.addEffect(player.x, player.y, `-${spikeDmg}`, '#aaaaaa');
+            renderer.shake(2, 0.9);
+            player.hitFlash = 80;
+            if (player.hp <= 0) {
+              player.causeOfDeath = 'Impaled by spike trap';
+              saveHighScores();
+              state = STATE.GAME_OVER;
+              return;
+            }
+          }
+
+          // Auto-pickup keys only (potions require manual pickup)
+          const groundItem = getItemAt(items, player.x, player.y);
+          if (groundItem && groundItem.type === 'key') {
+            const pickedUp = pickupItem(player, groundItem, items, messageLog, renderer);
+            if (pickedUp) {
+              keysCollected++;
+              if (keysCollected >= keysRequired) {
+                messageLog.add('The stairs are now unlocked!');
+              }
             }
           }
         }
@@ -632,7 +687,11 @@ function updateEnemiesRealTime() {
 
   let needFOVUpdate = false;
   for (const action of actions) {
-    if (action.type === 'attack' && action.enemy) {
+    if ((action.type === 'attack' || action.type === 'ranged_attack') && action.enemy) {
+      if (action.type === 'ranged_attack') {
+        // Show projectile trail effect
+        renderer.addProjectile(action.fromX, action.fromY, player.x, player.y, action.enemy.color);
+      }
       const playerDied = enemyAttack(action.enemy, player, rng, messageLog, renderer);
       if (playerDied) {
         saveHighScores();

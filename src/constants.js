@@ -5,7 +5,10 @@ export const TILE = {
   CORRIDOR: 2,
   DOOR: 3,
   STAIRS_DOWN: 4,
-  STAIRS_UP: 5
+  STAIRS_UP: 5,
+  LAVA: 6,
+  ICE: 7,
+  SPIKE_TRAP: 8
 };
 
 // Color palette
@@ -23,15 +26,21 @@ export const COLORS = {
   SKELETON: '#c9ada7',
   GOBLIN: '#52b788',
   TROLL: '#6d4c41',
+  ARCHER: '#d4a574',
   ELITE_SKELETON: '#e8d5cc',
   ELITE_GOBLIN: '#2d8a5e',
   ELITE_TROLL: '#8b3a2a',
+  ELITE_ARCHER: '#e8c090',
   ITEM_WEAPON: '#90e0ef',
   ITEM_POTION: '#e63946',
   ITEM_SCROLL: '#b185db',
   STAIRS: '#ffc300',
   STAIRS_LOCKED: '#666666',
   KEY: '#ffd700',
+  LAVA: '#cc3300',
+  LAVA_GLOW: '#ff6600',
+  ICE: '#a8d8ea',
+  SPIKE_TRAP: '#888888',
   HUD_BG: '#0d0d1a',
   HUD_TEXT: '#f2e9e4',
   HP_BAR: '#e63946',
@@ -82,17 +91,18 @@ export const CONFIG = {
 export const FLOOR_CONFIG = [
   null, // index 0 unused
   { enemyMin: 5, enemyMax: 8, types: ['skeleton', 'goblin'], itemDensity: 'high', keysRequired: 1, miniBossChance: 0 },
-  { enemyMin: 8, enemyMax: 12, types: ['skeleton', 'goblin'], itemDensity: 'medium', keysRequired: 1, miniBossChance: 0.10 },
-  { enemyMin: 10, enemyMax: 15, types: ['skeleton', 'goblin', 'troll'], trollMax: 2, itemDensity: 'medium', keysRequired: 2, miniBossChance: 0.15 },
-  { enemyMin: 12, enemyMax: 18, types: ['skeleton', 'goblin', 'troll'], trollMax: 4, itemDensity: 'low', keysRequired: 2, miniBossChance: 0.20 },
-  { enemyMin: 15, enemyMax: 20, types: ['skeleton', 'goblin', 'troll'], trollMax: 6, boss: true, itemDensity: 'low', keysRequired: 3, miniBossChance: 0.25 }
+  { enemyMin: 8, enemyMax: 12, types: ['skeleton', 'goblin', 'archer'], archerMax: 2, itemDensity: 'medium', keysRequired: 1, miniBossChance: 0.10 },
+  { enemyMin: 10, enemyMax: 15, types: ['skeleton', 'goblin', 'archer', 'troll'], trollMax: 2, archerMax: 3, itemDensity: 'medium', keysRequired: 2, miniBossChance: 0.15 },
+  { enemyMin: 12, enemyMax: 18, types: ['skeleton', 'goblin', 'archer', 'troll'], trollMax: 4, archerMax: 4, itemDensity: 'low', keysRequired: 2, miniBossChance: 0.20 },
+  { enemyMin: 15, enemyMax: 20, types: ['skeleton', 'goblin', 'archer', 'troll'], trollMax: 6, archerMax: 5, boss: true, itemDensity: 'low', keysRequired: 3, miniBossChance: 0.25 }
 ];
 
 // Enemy stats
 export const ENEMY_STATS = {
   skeleton: { name: 'Skeleton', hp: 45, damage: 4, xp: 5, moveMs: 500, color: COLORS.SKELETON, flees: false },
   goblin: { name: 'Goblin', hp: 15, damage: 3, xp: 3, moveMs: 300, color: COLORS.GOBLIN, flees: true },
-  troll: { name: 'Troll', hp: 75, damage: 10, xp: 12, moveMs: 700, color: COLORS.TROLL, flees: false }
+  troll: { name: 'Troll', hp: 75, damage: 10, xp: 12, moveMs: 700, color: COLORS.TROLL, flees: false },
+  archer: { name: 'Archer', hp: 25, damage: 5, xp: 7, moveMs: 600, color: COLORS.ARCHER, flees: true, ranged: true, range: 5 }
 };
 
 // Weapon definitions
@@ -120,5 +130,6 @@ export const AI_STATE = {
   PATROL: 'PATROL',
   CHASE: 'CHASE',
   ATTACK: 'ATTACK',
+  RANGED_ATTACK: 'RANGED_ATTACK',
   FLEEING: 'FLEEING'
 };

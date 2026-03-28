@@ -54,15 +54,27 @@ class MinHeap {
   }
 }
 
-// 4-directional neighbors (no diagonal movement)
+// 8-directional neighbors
 const DIRS = [
-  { x: 0, y: -1 }, // up
-  { x: 1, y: 0 },  // right
-  { x: 0, y: 1 },  // down
-  { x: -1, y: 0 }  // left
+  { x: 0, y: -1 },  // N
+  { x: 1, y: 0 },   // E
+  { x: 0, y: 1 },   // S
+  { x: -1, y: 0 },  // W
+  { x: 1, y: -1 },  // NE
+  { x: 1, y: 1 },   // SE
+  { x: -1, y: 1 },  // SW
+  { x: -1, y: -1 }, // NW
 ];
 
-// Manhattan distance heuristic
+// Cardinal directions only (4-way subset)
+const CARDINAL_DIRS = DIRS.slice(0, 4);
+
+// Chebyshev distance heuristic (supports 8-way movement)
+function chebyshev(x1, y1, x2, y2) {
+  return Math.max(Math.abs(x2 - x1), Math.abs(y2 - y1));
+}
+
+// Manhattan distance (used for range checks)
 function manhattan(x1, y1, x2, y2) {
   return Math.abs(x2 - x1) + Math.abs(y2 - y1);
 }
@@ -79,7 +91,7 @@ export function findPath(map, startX, startY, goalX, goalY, enemies, selfEnemy) 
 
   openSet.push({
     x: startX, y: startY,
-    f: manhattan(startX, startY, goalX, goalY),
+    f: chebyshev(startX, startY, goalX, goalY),
     g: 0
   });
 
@@ -114,6 +126,11 @@ export function findPath(map, startX, startY, goalX, goalY, enemies, selfEnemy) 
       if (nx < 0 || nx >= CONFIG.MAP_WIDTH || ny < 0 || ny >= CONFIG.MAP_HEIGHT) continue;
       if (!isWalkable(map[ny][nx])) continue;
 
+      // Prevent diagonal corner-cutting through walls
+      if (dir.x !== 0 && dir.y !== 0) {
+        if (!isWalkable(map[current.y][nx]) || !isWalkable(map[ny][current.x])) continue;
+      }
+
       // Don't path through other enemies (except at the goal)
       if (!(nx === goalX && ny === goalY)) {
         const blockingEnemy = getEnemyAt(enemies, nx, ny);
@@ -133,7 +150,7 @@ export function findPath(map, startX, startY, goalX, goalY, enemies, selfEnemy) 
 
       openSet.push({
         x: nx, y: ny,
-        f: tentativeG + manhattan(nx, ny, goalX, goalY),
+        f: tentativeG + chebyshev(nx, ny, goalX, goalY),
         g: tentativeG
       });
     }
@@ -146,8 +163,9 @@ export function findPath(map, startX, startY, goalX, goalY, enemies, selfEnemy) 
 export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
   if (!enemy.isAlive) return null; // null = no action
 
-  const distToPlayer = manhattan(enemy.x, enemy.y, player.x, player.y);
-  const canSeePlayer = distToPlayer <= enemy.fovRange &&
+  const distToPlayer = chebyshev(enemy.x, enemy.y, player.x, player.y);
+  const manhatDist = manhattan(enemy.x, enemy.y, player.x, player.y);
+  const canSeePlayer = manhatDist <= enemy.fovRange &&
     hasLineOfSight(map, enemy.x, enemy.y, player.x, player.y);
 
   // State transitions
@@ -170,7 +188,7 @@ export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
       break;
 
     case AI_STATE.CHASE:
-      // Check flee condition (goblin below 25% HP)
+      // Check flee condition (goblin/archer below 25% HP)
       if (enemy.canFlee && enemy.hp < enemy.maxHp * 0.25) {
         enemy.state = AI_STATE.FLEEING;
         break;
@@ -186,12 +204,25 @@ export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
           break;
         }
       }
-      if (distToPlayer <= 1) {
+      // Ranged enemies prefer to attack from distance
+      if (enemy.isRanged && distToPlayer <= enemy.attackRange && canSeePlayer) {
+        enemy.state = AI_STATE.RANGED_ATTACK;
+      } else if (distToPlayer <= 1) {
         enemy.state = AI_STATE.ATTACK;
-      } else if (!canSeePlayer && distToPlayer > enemy.fovRange + 3) {
+      } else if (!canSeePlayer && manhatDist > enemy.fovRange + 3) {
         // Lost the player, go back to patrol
         enemy.state = AI_STATE.PATROL;
         pickPatrolTarget(enemy, map, rng);
+      }
+      break;
+
+    case AI_STATE.RANGED_ATTACK:
+      if (enemy.canFlee && enemy.hp < enemy.maxHp * 0.25) {
+        enemy.state = AI_STATE.FLEEING;
+      } else if (!canSeePlayer || distToPlayer > enemy.attackRange) {
+        enemy.state = AI_STATE.CHASE;
+      } else if (distToPlayer <= 1) {
+        enemy.state = AI_STATE.ATTACK; // Too close, melee instead
       }
       break;
 
@@ -215,13 +246,6 @@ export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
   // Check if it's time to move
   if (currentTime - enemy.lastMoveTime < enemy.moveMs) return null;
 
-  // Recovery frame: if the enemy just moved, skip this turn
-  if (enemy.recovering) {
-    enemy.recovering = false;
-    enemy.lastMoveTime = currentTime;
-    return null;
-  }
-
   // Execute behavior based on state
   let action = null;
 
@@ -236,6 +260,10 @@ export function updateEnemyAI(enemy, player, map, enemies, currentTime, rng) {
 
     case AI_STATE.ATTACK:
       action = doAttack(enemy, player, map, enemies, currentTime, rng);
+      break;
+
+    case AI_STATE.RANGED_ATTACK:
+      action = doRangedAttack(enemy, player, map, enemies, currentTime, rng);
       break;
 
     case AI_STATE.FLEEING:
@@ -298,7 +326,6 @@ function doPatrol(enemy, map, enemies, currentTime, rng) {
       enemy.y = ny;
       enemy.lastMoveTime = currentTime;
       // Goblins patrol quickly, no recovery. Others recover.
-      enemy.recovering = enemy.type !== 'goblin';
       return { type: 'move' };
     }
   }
@@ -337,7 +364,6 @@ function doChase(enemy, player, map, enemies, currentTime, rng) {
       enemy.path.shift();
       enemy.lastMoveTime = currentTime;
       // Goblins chase without recovery (fast & dangerous), others pause after moving
-      enemy.recovering = enemy.type !== 'goblin';
       return { type: 'move' };
     } else {
       // Path blocked, recalculate next time
@@ -387,8 +413,26 @@ function doReposition(enemy, player, map, enemies, currentTime, rng) {
   enemy.x = target.x;
   enemy.y = target.y;
   enemy.lastMoveTime = currentTime;
-  enemy.recovering = true;
   return { type: 'move' };
+}
+
+// Ranged attack: shoot from distance, try to maintain range
+function doRangedAttack(enemy, player, map, enemies, currentTime, rng) {
+  const dist = chebyshev(enemy.x, enemy.y, player.x, player.y);
+
+  // If player is adjacent, kite away instead of shooting
+  if (dist <= 1) {
+    return doFlee(enemy, player, map, enemies, currentTime);
+  }
+
+  // Shoot if in range and has line of sight
+  if (dist <= enemy.attackRange && hasLineOfSight(map, enemy.x, enemy.y, player.x, player.y)) {
+    enemy.lastMoveTime = currentTime;
+    return { type: 'ranged_attack', enemy, fromX: enemy.x, fromY: enemy.y };
+  }
+
+  // Otherwise chase closer
+  return doChase(enemy, player, map, enemies, currentTime, rng);
 }
 
 // Flee behavior: run away from player
@@ -415,8 +459,6 @@ function doFlee(enemy, player, map, enemies, currentTime) {
       enemy.x = nx;
       enemy.y = ny;
       enemy.lastMoveTime = currentTime;
-      // ALL enemies recover when fleeing (panicking, inefficient) — makes them catchable
-      enemy.recovering = true;
       return { type: 'move' };
     }
   }

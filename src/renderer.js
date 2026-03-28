@@ -25,6 +25,7 @@ export class Renderer {
     this.time = 0;
     this.keysCollected = 0;
     this.keysRequired = 0;
+    this.projectiles = [];
   }
 
   // Generate random grit dots for floor texturing (seeded)
@@ -222,6 +223,56 @@ export class Renderer {
               ctx.stroke();
             }
             break;
+
+          case TILE.LAVA:
+            ctx.fillStyle = isVisible ? '#331100' : '#220800';
+            ctx.fillRect(px, py, ts, ts);
+            if (isVisible) {
+              ctx.fillStyle = COLORS.LAVA;
+              ctx.globalAlpha = alpha * (0.4 + 0.2 * Math.sin(this.time * 3 + x * 2));
+              ctx.fillRect(px + 4, py + 4, ts - 8, ts - 8);
+              ctx.globalAlpha = alpha;
+              ctx.fillStyle = COLORS.LAVA_GLOW;
+              ctx.globalAlpha = alpha * 0.15;
+              ctx.fillRect(px, py, ts, ts);
+              ctx.globalAlpha = alpha;
+            }
+            break;
+
+          case TILE.ICE:
+            ctx.fillStyle = isVisible ? '#c8e6f0' : '#6a8a94';
+            ctx.fillRect(px, py, ts, ts);
+            if (isVisible) {
+              ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(px + 4, py + ts / 2);
+              ctx.lineTo(px + ts - 4, py + ts / 2);
+              ctx.moveTo(px + ts / 2, py + 4);
+              ctx.lineTo(px + ts / 2, py + ts - 4);
+              ctx.stroke();
+            }
+            break;
+
+          case TILE.SPIKE_TRAP:
+            ctx.fillStyle = isVisible ? COLORS.FLOOR_LIT : COLORS.FLOOR;
+            ctx.fillRect(px, py, ts, ts);
+            if (isVisible) {
+              ctx.fillStyle = COLORS.SPIKE_TRAP;
+              // Draw small triangle spikes
+              for (let sx = 0; sx < 3; sx++) {
+                for (let sy = 0; sy < 3; sy++) {
+                  const spx = px + 5 + sx * 9;
+                  const spy = py + 5 + sy * 9;
+                  ctx.beginPath();
+                  ctx.moveTo(spx, spy + 5);
+                  ctx.lineTo(spx + 3, spy);
+                  ctx.lineTo(spx + 6, spy + 5);
+                  ctx.fill();
+                }
+              }
+            }
+            break;
         }
       }
     }
@@ -361,6 +412,18 @@ export class Renderer {
           ctx.lineTo(px + i * 4 + 2, crownY);
           ctx.fill();
         }
+      }
+
+      // Ranged enemy crosshair indicator
+      if (enemy.isRanged) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(px - radius * 0.5, py);
+        ctx.lineTo(px + radius * 0.5, py);
+        ctx.moveTo(px, py - radius * 0.5);
+        ctx.lineTo(px, py + radius * 0.5);
+        ctx.stroke();
       }
     }
 
@@ -531,6 +594,52 @@ export class Renderer {
         color: color,
         size: 2 + Math.random() * 3
       });
+    }
+  }
+
+  // Add a projectile trail (for ranged attacks)
+  addProjectile(fromX, fromY, toX, toY, color) {
+    const ts = CONFIG.TILE_SIZE;
+    this.projectiles.push({
+      fromX: fromX * ts + ts / 2,
+      fromY: fromY * ts + ts / 2,
+      toX: toX * ts + ts / 2,
+      toY: toY * ts + ts / 2,
+      color,
+      age: 0,
+      life: 300
+    });
+  }
+
+  // Draw projectile trails
+  drawProjectiles(ctx, offset, deltaTime) {
+    for (let i = this.projectiles.length - 1; i >= 0; i--) {
+      const p = this.projectiles[i];
+      p.age += deltaTime;
+      if (p.age >= p.life) {
+        this.projectiles.splice(i, 1);
+        continue;
+      }
+      const progress = p.age / p.life;
+      const alpha = 1 - progress;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 6;
+      // Draw arrow line from source to target
+      const headProgress = Math.min(progress * 3, 1);
+      const tailProgress = Math.max(0, progress * 3 - 0.5);
+      const hx = p.fromX + (p.toX - p.fromX) * headProgress + offset.x;
+      const hy = p.fromY + (p.toY - p.fromY) * headProgress + offset.y;
+      const tx = p.fromX + (p.toX - p.fromX) * tailProgress + offset.x;
+      const ty = p.fromY + (p.toY - p.fromY) * tailProgress + offset.y;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(hx, hy);
+      ctx.stroke();
+      ctx.restore();
     }
   }
 
@@ -830,6 +939,9 @@ export class Renderer {
 
     // Draw particles (dead enemy particles, etc.)
     this.drawParticles(ctx, offset, deltaTime);
+
+    // Draw projectiles (ranged attacks)
+    this.drawProjectiles(ctx, offset, deltaTime);
 
     // Draw player
     this.drawPlayer(ctx, player, offset, gameState.gameStartTime);
