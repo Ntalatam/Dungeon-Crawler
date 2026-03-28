@@ -92,8 +92,8 @@ export class BossEnemy extends Enemy {
   constructor(x, y) {
     super(x, y, 'troll');
     this.name = 'The Ancient One';
-    this.hp = 150;
-    this.maxHp = 150;
+    this.hp = 120;
+    this.maxHp = 120;
     this.baseDamage = 12;
     this.xpValue = 50;
     this.isBoss = true;
@@ -160,6 +160,15 @@ export function spawnEnemies(floor, entitySpawns, rooms, rng) {
 
     const enemy = new Enemy(spawn.x, spawn.y, type);
     enemy.spawnRoom = spawn.room;
+
+    // Scale goblin stats per floor so they stay relevant
+    if (type === 'goblin' && floor > 1) {
+      const scale = 1 + (floor - 1) * 0.2; // +20% per floor: F2=1.2x, F3=1.4x, F4=1.6x, F5=1.8x
+      enemy.hp = Math.round(enemy.hp * scale);
+      enemy.maxHp = enemy.hp;
+      enemy.baseDamage = Math.round(enemy.baseDamage * (1 + (floor - 1) * 0.15));
+      enemy.xpValue = Math.round(enemy.xpValue * scale);
+    }
 
     // Promote to mini-boss based on floor config
     const miniBossChance = config.miniBossChance || 0;

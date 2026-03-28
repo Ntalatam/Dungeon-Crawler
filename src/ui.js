@@ -504,18 +504,18 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
 
   // --- Items ---
   heading('ITEMS');
-  line('Health Potions (red heart) : Auto-picked up on walk-over. +15 HP.', COLORS.ITEM_POTION);
+  line('Health Potions (red heart) : Auto-picked up on walk-over. +20 HP.', COLORS.ITEM_POTION);
   line('Weapons (blue sword)  : Press E to equip. Better weapons on deeper floors.', COLORS.ITEM_WEAPON);
-  line('  Dagger (1-4 dmg)  |  Shortsword (2-6)  |  Longsword (3-8, Floor 2+)');
+  line('  Dagger (2-5 dmg)  |  Shortsword (2-6)  |  Longsword (3-8, Floor 2+)');
   line('  Battle Axe (5-12 dmg, Floor 3+)');
   line('Scrolls (purple)      : Press E to use. Blinds nearest enemy.', COLORS.ITEM_SCROLL);
   line('Floor Keys (gold)     : Auto-picked up. Required to unlock the stairs.', '#ffd700');
 
   // --- Enemies ---
   heading('ENEMIES');
-  line('Skeleton (beige)  - 38 HP, slow. Fights to the death.', COLORS.SKELETON);
-  line('Goblin (green)    - 15 HP, fast. Flees when below 25% HP.', COLORS.GOBLIN);
-  line('Troll (brown)     - 75 HP, very slow, heavy damage. Floor 3+.', COLORS.TROLL);
+  line('Skeleton (beige)  - 45 HP, medium speed. Fights to the death.', COLORS.SKELETON);
+  line('Goblin (green)    - 15 HP (scales per floor), fast. Flees at <25% HP.', COLORS.GOBLIN);
+  line('Troll (brown)     - 75 HP, slow but hits hard (10 dmg). Floor 3+.', COLORS.TROLL);
   gap();
   line('Elite enemies have crowns, larger bodies, and stronger stats.');
   line('Enemy dots: gray = idle, red = chasing you, yellow = fleeing.');

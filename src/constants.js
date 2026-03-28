@@ -54,9 +54,9 @@ export const CONFIG = {
   MIN_ROOM_SIZE: 6,
   MAX_BSP_DEPTH: 5,
   GAME_TICK_MS: 100,
-  SKELETON_MOVE_MS: 600,
+  SKELETON_MOVE_MS: 500,
   GOBLIN_MOVE_MS: 300,
-  TROLL_MOVE_MS: 900,
+  TROLL_MOVE_MS: 700,
   MAX_FLOORS: 5,
   MAX_PLAYER_LEVEL: 7,
   XP_THRESHOLDS: [0, 10, 25, 45, 70, 100, 140],
@@ -73,8 +73,8 @@ export const CONFIG = {
   MAX_PATH_LENGTH: 20,
   PATHFIND_INTERVAL: 500,
   HIT_CHANCE: 0.85,
-  LOOT_DROP_CHANCE: 0.20,
-  POTION_HEAL: 15,
+  LOOT_DROP_CHANCE: 0.30,
+  POTION_HEAL: 20,
   BLIND_DURATION: 5000
 };
 
@@ -90,15 +90,15 @@ export const FLOOR_CONFIG = [
 
 // Enemy stats
 export const ENEMY_STATS = {
-  skeleton: { name: 'Skeleton', hp: 38, damage: 4, xp: 5, moveMs: 600, color: COLORS.SKELETON, flees: false },
+  skeleton: { name: 'Skeleton', hp: 45, damage: 4, xp: 5, moveMs: 500, color: COLORS.SKELETON, flees: false },
   goblin: { name: 'Goblin', hp: 15, damage: 3, xp: 3, moveMs: 300, color: COLORS.GOBLIN, flees: true },
-  troll: { name: 'Troll', hp: 75, damage: 8, xp: 12, moveMs: 900, color: COLORS.TROLL, flees: false }
+  troll: { name: 'Troll', hp: 75, damage: 10, xp: 12, moveMs: 700, color: COLORS.TROLL, flees: false }
 };
 
 // Weapon definitions
 export const WEAPONS = {
   fists: { name: 'Fists', minDamage: 1, maxDamage: 2, speedBonus: 0, minFloor: 1 },
-  dagger: { name: 'Dagger', minDamage: 1, maxDamage: 4, speedBonus: 1, minFloor: 1 },
+  dagger: { name: 'Dagger', minDamage: 2, maxDamage: 5, speedBonus: 1, minFloor: 1 },
   shortsword: { name: 'Shortsword', minDamage: 2, maxDamage: 6, speedBonus: 0, minFloor: 1 },
   longsword: { name: 'Longsword', minDamage: 3, maxDamage: 8, speedBonus: 0, minFloor: 2 },
   battleaxe: { name: 'Battle Axe', minDamage: 5, maxDamage: 12, speedBonus: -1, minFloor: 3 }
