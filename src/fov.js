@@ -43,7 +43,7 @@ function castLight(map, visible, ox, oy, radius, row, startSlope, endSlope, tran
       const distSq = dx * dx + dy * dy;
       if (distSq <= radius * radius) {
         if (mapX >= 0 && mapX < CONFIG.MAP_WIDTH && mapY >= 0 && mapY < CONFIG.MAP_HEIGHT) {
-          visible[mapY][mapX] = true;
+          visible[mapY][mapX] = 1;
         }
       }
 
@@ -66,15 +66,29 @@ function castLight(map, visible, ox, oy, radius, row, startSlope, endSlope, tran
   }
 }
 
-// Compute FOV from a position, returns 2D boolean array of visible tiles
-export function computeFOV(map, playerX, playerY, radius) {
-  const visible = [];
-  for (let y = 0; y < CONFIG.MAP_HEIGHT; y++) {
-    visible[y] = new Array(CONFIG.MAP_WIDTH).fill(false);
+// Reusable visible array (avoids allocation per call)
+let _visibleCache = null;
+
+function getVisibleArray() {
+  if (!_visibleCache) {
+    _visibleCache = [];
+    for (let y = 0; y < CONFIG.MAP_HEIGHT; y++) {
+      _visibleCache[y] = new Uint8Array(CONFIG.MAP_WIDTH);
+    }
   }
+  // Clear
+  for (let y = 0; y < CONFIG.MAP_HEIGHT; y++) {
+    _visibleCache[y].fill(0);
+  }
+  return _visibleCache;
+}
+
+// Compute FOV from a position, returns 2D array of visible tiles
+export function computeFOV(map, playerX, playerY, radius) {
+  const visible = getVisibleArray();
 
   // Player's tile is always visible
-  visible[playerY][playerX] = true;
+  visible[playerY][playerX] = 1;
 
   // Cast light in all 8 octants
   for (const transform of OCTANT_TRANSFORMS) {
@@ -84,22 +98,34 @@ export function computeFOV(map, playerX, playerY, radius) {
   return visible;
 }
 
-// Update the explored map (persistent across FOV updates)
-export function updateExplored(explored, visible) {
-  for (let y = 0; y < CONFIG.MAP_HEIGHT; y++) {
-    for (let x = 0; x < CONFIG.MAP_WIDTH; x++) {
-      if (visible[y][x]) {
-        explored[y][x] = true;
+// Update the explored map — only scan the FOV area (not entire map)
+export function updateExplored(explored, visible, playerX, playerY, radius) {
+  // If player position isn't passed, fall back to full scan
+  if (playerX === undefined) {
+    for (let y = 0; y < CONFIG.MAP_HEIGHT; y++) {
+      for (let x = 0; x < CONFIG.MAP_WIDTH; x++) {
+        if (visible[y][x]) explored[y][x] = true;
       }
+    }
+    return;
+  }
+  const r = radius || CONFIG.FOV_RADIUS;
+  const minY = Math.max(0, playerY - r);
+  const maxY = Math.min(CONFIG.MAP_HEIGHT - 1, playerY + r);
+  const minX = Math.max(0, playerX - r);
+  const maxX = Math.min(CONFIG.MAP_WIDTH - 1, playerX + r);
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      if (visible[y][x]) explored[y][x] = true;
     }
   }
 }
 
-// Create a fresh explored array
+// Create a fresh explored array (Uint8Array for memory efficiency)
 export function createExploredMap() {
   const explored = [];
   for (let y = 0; y < CONFIG.MAP_HEIGHT; y++) {
-    explored[y] = new Array(CONFIG.MAP_WIDTH).fill(false);
+    explored[y] = new Uint8Array(CONFIG.MAP_WIDTH);
   }
   return explored;
 }

@@ -3,7 +3,7 @@ import { CONFIG, STATE, TILE, FLOOR_CONFIG, DIFFICULTY, COLORS } from './constan
 import { generateDungeon, isWalkable, mulberry32 } from './dungeon.js';
 import { Renderer } from './renderer.js';
 import { computeFOV, updateExplored, createExploredMap } from './fov.js';
-import { Player, Item, spawnEnemies, spawnItems, getItemAt, getEnemyAt } from './entities.js';
+import { Player, Item, spawnEnemies, spawnItems, getItemAt, getEnemyAt, buildEnemySpatialGrid } from './entities.js';
 import { updateAllEnemies } from './ai.js';
 import { playerAttack, enemyAttack, pickupItem, generateLoot, applyBlinding } from './combat.js';
 import { MessageLog, drawHUD, drawMainMenu, drawHowToPlay, drawPauseMenu, drawGameOver, drawVictory, drawLevelTransition, drawStore } from './ui.js';
@@ -543,7 +543,8 @@ function initFloor() {
   // Initialize FOV
   explored = createExploredMap();
   visible = computeFOV(map, player.x, player.y, CONFIG.FOV_RADIUS);
-  updateExplored(explored, visible);
+  updateExplored(explored, visible, player.x, player.y, CONFIG.FOV_RADIUS);
+  renderer.invalidateMap();
 
   // Initialize renderer
   renderer.generateGrit(mulberry32(seed + floor * 2000));
@@ -687,7 +688,8 @@ function processInput() {
 
   if (moved) {
     visible = computeFOV(map, player.x, player.y, CONFIG.FOV_RADIUS);
-    updateExplored(explored, visible);
+    updateExplored(explored, visible, player.x, player.y, CONFIG.FOV_RADIUS);
+    renderer.invalidateMap();
   }
 
 }
@@ -772,6 +774,7 @@ function updateEnemiesRealTime() {
   // Update FOV if any enemy moved (might have entered/exited visible area)
   if (needFOVUpdate) {
     visible = computeFOV(map, player.x, player.y, CONFIG.FOV_RADIUS);
+    renderer.invalidateMap();
   }
 }
 
@@ -959,6 +962,7 @@ function gameLoop(timestamp) {
       break;
 
     case STATE.PLAYING:
+      buildEnemySpatialGrid(enemies);
       processInput();
       updateEnemiesRealTime();
 

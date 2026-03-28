@@ -30,6 +30,7 @@ export class Renderer {
     this.playerHpRatio = 1;
     this.bossRevealed = false;
     this.bossRevealTime = 0;
+    this.mapDirty = true; // Map layer needs redraw
   }
 
   // Generate random grit dots for floor texturing (seeded)
@@ -97,8 +98,15 @@ export class Renderer {
     this.screenShake.decay = decay;
   }
 
-  // Redraw the static map layer
+  // Mark map as needing redraw (call when FOV changes)
+  invalidateMap() {
+    this.mapDirty = true;
+  }
+
+  // Redraw the static map layer (only when dirty)
   renderMapLayer(map, visible, explored) {
+    if (!this.mapDirty) return;
+    this.mapDirty = false;
     const ctx = this.mapCtx;
     const ts = CONFIG.TILE_SIZE;
 

@@ -310,7 +310,34 @@ export function getItemAt(items, x, y) {
   return items.find(item => item.x === x && item.y === y);
 }
 
-// Get enemy at a position
+// Get enemy at a position — uses spatial index if available, otherwise linear scan
 export function getEnemyAt(enemies, x, y) {
+  // Fast path: use spatial index if it exists
+  if (enemies._spatialGrid) {
+    const key = x + ',' + y;
+    const enemy = enemies._spatialGrid.get(key);
+    if (enemy && enemy.isAlive && enemy.x === x && enemy.y === y) return enemy;
+    return null;
+  }
   return enemies.find(enemy => enemy.x === x && enemy.y === y && enemy.isAlive);
+}
+
+// Build spatial index for enemies (call once per frame before AI updates)
+export function buildEnemySpatialGrid(enemies) {
+  const grid = new Map();
+  for (const enemy of enemies) {
+    if (enemy.isAlive) {
+      grid.set(enemy.x + ',' + enemy.y, enemy);
+    }
+  }
+  enemies._spatialGrid = grid;
+}
+
+// Update spatial grid when an enemy moves
+export function updateEnemySpatialGrid(enemies, enemy, oldX, oldY) {
+  if (!enemies._spatialGrid) return;
+  enemies._spatialGrid.delete(oldX + ',' + oldY);
+  if (enemy.isAlive) {
+    enemies._spatialGrid.set(enemy.x + ',' + enemy.y, enemy);
+  }
 }
