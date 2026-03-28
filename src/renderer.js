@@ -504,10 +504,11 @@ export class Renderer {
     ctx.save();
 
     if (item.type === 'weapon') {
-      // Sword with glow
-      ctx.shadowColor = COLORS.ITEM_WEAPON;
+      // Sword with glow (cursed weapons are purple)
+      const wColor = item.data && item.data.cursed ? '#8b00ff' : COLORS.ITEM_WEAPON;
+      ctx.shadowColor = wColor;
       ctx.shadowBlur = 6;
-      ctx.strokeStyle = COLORS.ITEM_WEAPON;
+      ctx.strokeStyle = wColor;
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(px - 4, py + 6 + hover);

@@ -108,16 +108,22 @@ export function enemyAttack(enemy, player, rng, messageLog, renderer) {
 export function pickupItem(player, item, items, messageLog, renderer) {
   switch (item.type) {
     case 'weapon': {
-      // Equip if better than current weapon
+      // Equip if better than current weapon (non-cursed average vs non-cursed average)
       const newAvg = (item.data.minDamage + item.data.maxDamage) / 2;
       const curAvg = (player.weapon.minDamage + player.weapon.maxDamage) / 2;
       if (newAvg > curAvg) {
         player.weapon = { ...item.data };
-        messageLog.add(`You found a ${item.name}! Equipped!`);
+        if (item.data.cursed) {
+          messageLog.add(`You found a ${item.name}! Equipped! WARNING: drains ${item.data.hpDrain} HP per hit!`);
+          renderer.addEffect(item.x, item.y, 'CURSED', '#8b00ff');
+        } else {
+          messageLog.add(`You found a ${item.name}! Equipped!`);
+        }
       } else {
         messageLog.add(`You found a ${item.name}. Not better than your ${player.weapon.name}.`);
       }
-      renderer.addEffect(item.x, item.y, item.name, COLORS.ITEM_WEAPON);
+      renderer.addEffect(item.x, item.y, item.name, item.data.cursed ? '#8b00ff' : COLORS.ITEM_WEAPON);
+      playPickup();
       break;
     }
 
@@ -133,6 +139,7 @@ export function pickupItem(player, item, items, messageLog, renderer) {
 
     case 'scroll':
       messageLog.add(`You read the ${item.name}!`);
+      playPickup();
       // The blind effect is applied by the caller (main.js)
       break;
 
@@ -171,21 +178,28 @@ export function generateLoot(enemy, floor, rng) {
   const dropChance = enemy.isMiniBoss ? 1.0 : CONFIG.LOOT_DROP_CHANCE;
   if (rng() > dropChance) return null;
 
-  // 60% chance potion, 40% chance weapon
-  if (rng() < 0.6) {
+  // 50% potion, 30% weapon, 20% armor
+  const roll = rng();
+  if (roll < 0.5) {
     return new Item(enemy.x, enemy.y, 'potion', 'health', {
       name: 'Health Potion',
       healAmount: CONFIG.POTION_HEAL
     });
   }
 
-  const availableWeapons = Object.entries(WEAPONS)
-    .filter(([key, w]) => key !== 'fists' && w.minFloor <= floor);
+  if (roll < 0.8) {
+    const availableWeapons = Object.entries(WEAPONS)
+      .filter(([key, w]) => key !== 'fists' && w.minFloor <= floor);
+    if (availableWeapons.length === 0) return null;
+    const [key, weapon] = availableWeapons[Math.floor(rng() * availableWeapons.length)];
+    return new Item(enemy.x, enemy.y, 'weapon', key, { ...weapon });
+  }
 
-  if (availableWeapons.length === 0) return null;
-
-  const [key, weapon] = availableWeapons[Math.floor(rng() * availableWeapons.length)];
-  return new Item(enemy.x, enemy.y, 'weapon', key, { ...weapon });
+  const availableArmors = Object.entries(ARMORS)
+    .filter(([key, a]) => a.minFloor <= floor);
+  if (availableArmors.length === 0) return null;
+  const [key, armor] = availableArmors[Math.floor(rng() * availableArmors.length)];
+  return new Item(enemy.x, enemy.y, 'armor', key, { ...armor });
 }
 
 // Apply Scroll of Blinding to nearest enemy

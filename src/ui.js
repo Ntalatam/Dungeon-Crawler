@@ -129,9 +129,9 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.textAlign = 'left';
   ctx.fillText(`Floor ${floor}`, floorX, hudY + 22);
 
-  // Weapon
+  // Weapon (cursed weapons shown in purple)
   ctx.font = '13px monospace';
-  ctx.fillStyle = COLORS.ITEM_WEAPON;
+  ctx.fillStyle = player.weapon.cursed ? '#8b00ff' : COLORS.ITEM_WEAPON;
   ctx.fillText(`⚔ ${player.weapon.name}`, floorX, hudY + 42);
 
   // Damage range with average
