@@ -57,8 +57,9 @@ let keysRequired = 0;
 // Minimap overlay
 let minimapEnlarged = false;
 
-// Item hover tooltip
+// Item/enemy hover tooltip
 let hoveredItem = null;
+let hoveredEnemy = null;
 let mouseScreenX = 0;
 let mouseScreenY = 0;
 
@@ -72,7 +73,7 @@ let highScores = loadHighScores();
 // ---- Input handling ----
 const GAME_KEYS = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
   'w', 'W', 'a', 'A', 's', 'S', 'd', 'D', 'e', 'E', 'q', 'Q', 'z', 'Z', 'c', 'C',
-  'f', 'F', 'r', 'R',
+  'f', 'F', 'r', 'R', 'b', 'B',
   ' ', '.', '>', 'Enter', 'Escape', '?', '/', 'i', 'I', 'm', 'M']);
 
 // Normalize key to lowercase for direction tracking
@@ -169,6 +170,11 @@ document.addEventListener('keydown', (e) => {
     if (nk === 'm') {
       minimapEnlarged = !minimapEnlarged;
       updateCursor();
+      return;
+    }
+    if (nk === 'b') {
+      renderer.colorblindMode = !renderer.colorblindMode;
+      messageLog.add(renderer.colorblindMode ? 'Colorblind mode ON' : 'Colorblind mode OFF');
       return;
     }
     // Don't accept game input while minimap is open
@@ -369,6 +375,7 @@ canvas.addEventListener('mousemove', (e) => {
     if (minimapEnlarged) {
       canvas.style.cursor = 'pointer';
       hoveredItem = null;
+      hoveredEnemy = null;
       return;
     }
     const mmX = canvas.width - CONFIG.MINIMAP_WIDTH - 10;
@@ -377,6 +384,7 @@ canvas.addEventListener('mousemove', (e) => {
         my >= mmY - 2 && my <= mmY + CONFIG.MINIMAP_HEIGHT + 6) {
       canvas.style.cursor = 'pointer';
       hoveredItem = null;
+      hoveredEnemy = null;
     } else {
       canvas.style.cursor = 'none';
       // Check for item under mouse cursor (world coordinates)
@@ -384,9 +392,11 @@ canvas.addEventListener('mousemove', (e) => {
       const worldX = Math.floor((mx - offset.x) / CONFIG.TILE_SIZE);
       const worldY = Math.floor((my - offset.y) / CONFIG.TILE_SIZE);
       hoveredItem = null;
+      hoveredEnemy = null;
       if (worldX >= 0 && worldX < CONFIG.MAP_WIDTH && worldY >= 0 && worldY < CONFIG.MAP_HEIGHT) {
         if (visible && visible[worldY][worldX]) {
           hoveredItem = getItemAt(items, worldX, worldY) || null;
+          hoveredEnemy = getEnemyAt(enemies, worldX, worldY) || null;
         }
       }
     }
@@ -803,6 +813,74 @@ function drawItemTooltip(ctx, item, sx, sy) {
   ctx.fillText(desc, tx + padX, ty + padY + 28);
 }
 
+// ---- Enemy tooltip ----
+function drawEnemyTooltip(ctx, enemy, sx, sy) {
+  const name = enemy.name;
+  const hpText = `HP: ${enemy.hp}/${enemy.maxHp}`;
+  const stateText = enemy.state === 'CHASE' ? 'Hunting you' :
+                    enemy.state === 'FLEEING' ? 'Fleeing' :
+                    enemy.state === 'RANGED_ATTACK' ? 'Aiming' :
+                    enemy.state === 'IDLE' ? 'Idle' : '';
+
+  ctx.font = 'bold 13px monospace';
+  const nameWidth = ctx.measureText(name).width;
+  ctx.font = '11px monospace';
+  const hpWidth = ctx.measureText(hpText).width;
+  const stateWidth = stateText ? ctx.measureText(stateText).width : 0;
+  const textWidth = Math.max(nameWidth, hpWidth, stateWidth);
+
+  const padX = 10;
+  const padY = 6;
+  const tipW = textWidth + padX * 2;
+  const tipH = stateText ? 52 + padY : 38 + padY;
+  let tx = sx - tipW / 2;
+  let ty = sy - tipH - 16;
+  tx = Math.max(4, Math.min(tx, canvas.width - tipW - 4));
+  ty = Math.max(4, ty);
+
+  // Background
+  ctx.fillStyle = 'rgba(10, 10, 24, 0.92)';
+  ctx.beginPath();
+  ctx.moveTo(tx + 4, ty);
+  ctx.lineTo(tx + tipW - 4, ty);
+  ctx.quadraticCurveTo(tx + tipW, ty, tx + tipW, ty + 4);
+  ctx.lineTo(tx + tipW, ty + tipH - 4);
+  ctx.quadraticCurveTo(tx + tipW, ty + tipH, tx + tipW - 4, ty + tipH);
+  ctx.lineTo(tx + 4, ty + tipH);
+  ctx.quadraticCurveTo(tx, ty + tipH, tx, ty + tipH - 4);
+  ctx.lineTo(tx, ty + 4);
+  ctx.quadraticCurveTo(tx, ty, tx + 4, ty);
+  ctx.fill();
+  ctx.strokeStyle = enemy.color;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Name
+  ctx.fillStyle = enemy.color;
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(name, tx + padX, ty + padY + 12);
+
+  // HP with mini bar
+  const hpRatio = enemy.hp / enemy.maxHp;
+  const barW = tipW - padX * 2;
+  const barH = 4;
+  const barY = ty + padY + 18;
+  ctx.fillStyle = '#4a1a1a';
+  ctx.fillRect(tx + padX, barY, barW, barH);
+  ctx.fillStyle = hpRatio > 0.5 ? '#e63946' : hpRatio > 0.25 ? '#ff8800' : '#ff0000';
+  ctx.fillRect(tx + padX, barY, barW * hpRatio, barH);
+
+  ctx.fillStyle = '#aaa';
+  ctx.font = '11px monospace';
+  ctx.fillText(hpText, tx + padX, ty + padY + 32);
+
+  if (stateText) {
+    ctx.fillStyle = '#888';
+    ctx.fillText(stateText, tx + padX, ty + padY + 46);
+  }
+}
+
 // ---- Game loop ----
 let lastFrameTime = 0;
 
@@ -834,9 +912,13 @@ function gameLoop(timestamp) {
       // Draw HUD on top
       drawHUD(ctx, canvas, player, floor, messageLog, keysCollected, keysRequired);
 
-      // Draw item hover tooltip
-      if (hoveredItem && !minimapEnlarged) {
-        drawItemTooltip(ctx, hoveredItem, mouseScreenX, mouseScreenY);
+      // Draw hover tooltips
+      if (!minimapEnlarged) {
+        if (hoveredEnemy) {
+          drawEnemyTooltip(ctx, hoveredEnemy, mouseScreenX, mouseScreenY);
+        } else if (hoveredItem) {
+          drawItemTooltip(ctx, hoveredItem, mouseScreenX, mouseScreenY);
+        }
       }
 
       // Draw enlarged minimap overlay

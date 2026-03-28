@@ -26,6 +26,8 @@ export class Renderer {
     this.keysCollected = 0;
     this.keysRequired = 0;
     this.projectiles = [];
+    this.colorblindMode = false;
+    this.playerHpRatio = 1;
   }
 
   // Generate random grit dots for floor texturing (seeded)
@@ -450,7 +452,7 @@ export class Renderer {
 
     // State indicator
     const indicatorY = py - radius - (isElite ? 18 : 14);
-    if (enemy.state === 'CHASE' || enemy.state === 'ATTACK') {
+    if (enemy.state === 'CHASE' || enemy.state === 'ATTACK' || enemy.state === 'RANGED_ATTACK') {
       ctx.fillStyle = '#ff4444';
       ctx.font = `bold ${isElite ? 12 : 10}px monospace`;
       ctx.textAlign = 'center';
@@ -460,6 +462,21 @@ export class Renderer {
       ctx.font = `bold ${isElite ? 12 : 10}px monospace`;
       ctx.textAlign = 'center';
       ctx.fillText('~', px, indicatorY);
+    }
+
+    // Enemy name label below (always shown for visible enemies)
+    ctx.fillStyle = 'rgba(200,200,200,0.7)';
+    ctx.font = '9px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(enemy.name, px, py + radius + 14);
+
+    // Colorblind mode: large letter overlay on enemy body
+    if (this.colorblindMode) {
+      const letter = enemy.isBoss ? 'B' : enemy.type.charAt(0).toUpperCase();
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      ctx.font = `bold ${isElite ? 14 : 11}px monospace`;
+      ctx.textAlign = 'center';
+      ctx.fillText(letter, px, py + 4);
     }
   }
 
@@ -532,6 +549,16 @@ export class Renderer {
       // Key teeth
       ctx.fillRect(px + 1.5, py + 5 + hover, 3, 2);
       ctx.fillRect(px + 1.5, py + 8 + hover, 2, 2);
+    }
+
+    // Colorblind mode: letter overlay on items
+    if (this.colorblindMode) {
+      const letters = { potion: 'P', weapon: 'W', scroll: 'S', key: 'K' };
+      const letter = letters[item.type] || '?';
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.font = 'bold 10px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(letter, px, py + 4 + hover);
     }
 
     ctx.restore();
@@ -903,6 +930,7 @@ export class Renderer {
     this.time += deltaTime / 1000;
     this.keysCollected = gameState.keysCollected || 0;
     this.keysRequired = gameState.keysRequired || 0;
+    this.playerHpRatio = player.hp / player.maxHp;
 
     // Update interpolation for all entities
     this.updateEntityInterpolation(player, deltaTime);
@@ -966,15 +994,29 @@ export class Renderer {
     }
   }
 
-  // Draw vignette overlay for atmospheric effect
+  // Draw vignette overlay for atmospheric effect + low-health warning
   drawVignette(ctx) {
     const w = this.canvas.width;
     const h = this.canvas.height;
+
+    // Standard atmospheric vignette
     const gradient = ctx.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h * 0.85);
     gradient.addColorStop(0, 'rgba(0,0,0,0)');
     gradient.addColorStop(1, 'rgba(0,0,0,0.4)');
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, w, h);
+
+    // Low-health red vignette overlay (pulsing when HP < 30%)
+    if (this.playerHpRatio < 0.3 && this.playerHpRatio > 0) {
+      const severity = 1 - this.playerHpRatio / 0.3; // 0 at 30%, 1 at 0%
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 4);
+      const alpha = severity * (0.15 + pulse * 0.1);
+      const redGrad = ctx.createRadialGradient(w / 2, h / 2, h * 0.2, w / 2, h / 2, h * 0.7);
+      redGrad.addColorStop(0, 'rgba(230,57,70,0)');
+      redGrad.addColorStop(1, `rgba(230,57,70,${alpha})`);
+      ctx.fillStyle = redGrad;
+      ctx.fillRect(0, 0, w, h);
+    }
   }
 
   // Smoothly interpolate entity render position toward actual position

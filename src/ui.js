@@ -134,10 +134,11 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.fillStyle = COLORS.ITEM_WEAPON;
   ctx.fillText(`⚔ ${player.weapon.name}`, floorX, hudY + 42);
 
-  // Damage range
+  // Damage range with average
+  const avgDmg = ((player.weapon.minDamage + player.weapon.maxDamage) / 2).toFixed(1);
   ctx.fillStyle = '#888';
   ctx.font = '11px monospace';
-  ctx.fillText(`(${player.weapon.minDamage}-${player.weapon.maxDamage} dmg)`, floorX + 120, hudY + 42);
+  ctx.fillText(`(${player.weapon.minDamage}-${player.weapon.maxDamage} dmg, avg ${avgDmg})`, floorX + 120, hudY + 42);
 
   // Stats
   const statsX = floorX + 230;
@@ -179,7 +180,7 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.bezierCurveTo(phx + 5, phy - 4.5, phx + 5, phy - 1, phx, phy + 3);
   ctx.fill();
   ctx.fillStyle = '#aaa';
-  ctx.fillText('Potion +15HP (auto)', guideX + 14, hudY + 18);
+  ctx.fillText('Potion +20HP (F)', guideX + 14, hudY + 18);
   // Weapon
   ctx.strokeStyle = COLORS.ITEM_WEAPON;
   ctx.lineWidth = 2;
@@ -188,12 +189,12 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.lineTo(guideX + 8, hudY + 22);
   ctx.stroke();
   ctx.fillStyle = '#aaa';
-  ctx.fillText('Weapon (press E)', guideX + 14, hudY + 30);
+  ctx.fillText('Weapon (press F)', guideX + 14, hudY + 30);
   // Scroll
   ctx.fillStyle = COLORS.ITEM_SCROLL;
   ctx.fillRect(guideX, hudY + 35, 8, 8);
   ctx.fillStyle = '#aaa';
-  ctx.fillText('Scroll: blinds (E)', guideX + 14, hudY + 42);
+  ctx.fillText('Scroll: blinds (F)', guideX + 14, hudY + 42);
   // Key
   ctx.fillStyle = '#ffd700';
   ctx.beginPath();
@@ -565,6 +566,8 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('Use Scrolls of Blinding on Trolls. They hit HARD.');
   line('Stand on yellow stairs and press ENTER to go deeper.');
   line('Check the minimap to find the stairs (yellow dot).');
+  line('Hover your mouse over enemies to see their HP and status.');
+  line('Press B for colorblind mode (letter indicators on enemies/items).');
 
   // --- Controls Reference ---
   heading('CONTROLS');
@@ -574,6 +577,7 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('SPACE or .     -  Wait (skip turn)');
   line('ENTER or >     -  Descend stairs');
   line('ESC            -  Pause menu');
+  line('B              -  Toggle colorblind mode');
   line('M              -  Toggle full map');
   line('R              -  Restart (from game over / victory)');
 
