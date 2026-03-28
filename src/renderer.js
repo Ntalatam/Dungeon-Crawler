@@ -28,6 +28,8 @@ export class Renderer {
     this.projectiles = [];
     this.colorblindMode = false;
     this.playerHpRatio = 1;
+    this.bossRevealed = false;
+    this.bossRevealTime = 0;
   }
 
   // Generate random grit dots for floor texturing (seeded)
@@ -357,6 +359,14 @@ export class Renderer {
     // Only draw if the enemy's actual tile position is visible
     if (!visible[enemy.y][enemy.x]) return;
 
+    // Boss reveal animation trigger
+    if (enemy.isBoss && !this.bossRevealed) {
+      this.bossRevealed = true;
+      this.bossRevealTime = this.time;
+      this.shake(10, 0.88);
+      this.flash('#ff4444', 500);
+    }
+
     const ts = CONFIG.TILE_SIZE;
     const { px, py } = this.getEntityPixelPos(enemy, offset);
     const isElite = enemy.isMiniBoss || enemy.isBoss;
@@ -620,6 +630,26 @@ export class Renderer {
         age: 0,
         color: color,
         size: 2 + Math.random() * 3
+      });
+    }
+  }
+
+  // Spawn golden level-up particle burst
+  spawnLevelUpParticles(x, y) {
+    const ts = CONFIG.TILE_SIZE;
+    const cx = x * ts + ts / 2;
+    const cy = y * ts + ts / 2;
+    for (let i = 0; i < 24; i++) {
+      const angle = (Math.PI * 2 * i) / 24 + Math.random() * 0.3;
+      const speed = 60 + Math.random() * 80;
+      this.particles.push({
+        x: cx, y: cy,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed - 40,
+        life: 0.6 + Math.random() * 0.4,
+        age: 0,
+        color: i % 2 === 0 ? '#ffd60a' : '#ffffff',
+        size: 2 + Math.random() * 4
       });
     }
   }
@@ -983,6 +1013,14 @@ export class Renderer {
     // Vignette overlay for atmosphere
     this.drawVignette(ctx);
 
+    // Boss reveal banner
+    if (this.bossRevealed && this.bossRevealTime > 0) {
+      const elapsed = this.time - this.bossRevealTime;
+      if (elapsed < 2.5) {
+        this.drawBossRevealBanner(ctx, elapsed);
+      }
+    }
+
     // Draw minimap
     this.drawMinimap(ctx, map, visible, explored, player, enemies, items,
       gameState.keysCollected || 0, gameState.keysRequired || 0);
@@ -1017,6 +1055,49 @@ export class Renderer {
       ctx.fillStyle = redGrad;
       ctx.fillRect(0, 0, w, h);
     }
+  }
+
+  // Boss reveal dramatic banner
+  drawBossRevealBanner(ctx, elapsed) {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+
+    // Fade in (0-0.5s), hold (0.5-1.8s), fade out (1.8-2.5s)
+    let alpha;
+    if (elapsed < 0.5) {
+      alpha = elapsed / 0.5;
+    } else if (elapsed < 1.8) {
+      alpha = 1;
+    } else {
+      alpha = 1 - (elapsed - 1.8) / 0.7;
+    }
+
+    // Dark bar across screen
+    ctx.save();
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, h * 0.35, w, h * 0.18);
+
+    // Red accent lines
+    ctx.fillStyle = '#ff4444';
+    ctx.fillRect(0, h * 0.35, w, 2);
+    ctx.fillRect(0, h * 0.53 - 2, w, 2);
+
+    // Boss name text
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff4444';
+    ctx.shadowColor = '#ff4444';
+    ctx.shadowBlur = 20;
+    ctx.font = 'bold 32px monospace';
+    ctx.fillText('THE ANCIENT ONE', w / 2, h * 0.43);
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#cc8888';
+    ctx.font = '14px monospace';
+    ctx.fillText('A terrible power awakens...', w / 2, h * 0.49);
+
+    ctx.restore();
   }
 
   // Smoothly interpolate entity render position toward actual position

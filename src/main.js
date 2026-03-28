@@ -7,6 +7,7 @@ import { Player, Item, spawnEnemies, spawnItems, getItemAt, getEnemyAt } from '.
 import { updateAllEnemies } from './ai.js';
 import { playerAttack, enemyAttack, pickupItem, generateLoot, applyBlinding } from './combat.js';
 import { MessageLog, drawHUD, drawMainMenu, drawHowToPlay, drawPauseMenu, drawGameOver, drawVictory, drawLevelTransition, drawStore } from './ui.js';
+import { playPickup, playKeyPickup, playDescend, playHazard, playPlayerDeath, playArrowShoot, playBossReveal, toggleMute, isMuted } from './audio.js';
 
 // Canvas setup
 const canvas = document.getElementById('gameCanvas');
@@ -53,6 +54,7 @@ let showStore = false;
 // Key progression
 let keysCollected = 0;
 let keysRequired = 0;
+let bossRevealTriggered = false;
 
 // Minimap overlay
 let minimapEnlarged = false;
@@ -503,6 +505,8 @@ function initFloor() {
   renderer.generateGrit(mulberry32(seed + floor * 2000));
   renderer.snapCamera(player.x, player.y);
   renderer.effects = [];
+  renderer.bossRevealed = false;
+  bossRevealTriggered = false;
 
   messageLog.add(`Floor ${floor}. ${floor === 1 ? 'Find the stairs to descend.' : 'You descend deeper...'}`);
   if (keysRequired > 0) {
@@ -585,8 +589,10 @@ function processInput() {
             renderer.flash('#ff3300', 150);
             renderer.shake(3, 0.9);
             player.hitFlash = 100;
+            playHazard();
             if (player.hp <= 0) {
               player.causeOfDeath = 'Burned to death by lava';
+              playPlayerDeath();
               saveHighScores();
               state = STATE.GAME_OVER;
               return;
@@ -609,8 +615,10 @@ function processInput() {
             renderer.addEffect(player.x, player.y, `-${spikeDmg}`, '#aaaaaa');
             renderer.shake(2, 0.9);
             player.hitFlash = 80;
+            playHazard();
             if (player.hp <= 0) {
               player.causeOfDeath = 'Impaled by spike trap';
+              playPlayerDeath();
               saveHighScores();
               state = STATE.GAME_OVER;
               return;
@@ -682,6 +690,7 @@ function tryDescend() {
     floor++;
     transitionProgress = 0;
     state = STATE.LEVEL_TRANSITION;
+    playDescend();
     saveHighScores();
   } else {
     messageLog.add('No stairs here.');
@@ -701,9 +710,11 @@ function updateEnemiesRealTime() {
       if (action.type === 'ranged_attack') {
         // Show projectile trail effect
         renderer.addProjectile(action.fromX, action.fromY, player.x, player.y, action.enemy.color);
+        playArrowShoot();
       }
       const playerDied = enemyAttack(action.enemy, player, rng, messageLog, renderer);
       if (playerDied) {
+        playPlayerDeath();
         saveHighScores();
         state = STATE.GAME_OVER;
         return;
@@ -908,6 +919,13 @@ function gameLoop(timestamp) {
         endRoom, deltaTime, gameStartTime,
         keysCollected, keysRequired
       });
+
+      // Boss reveal sound
+      if (renderer.bossRevealed && !bossRevealTriggered) {
+        bossRevealTriggered = true;
+        playBossReveal();
+        messageLog.add('The Ancient One emerges from the darkness!');
+      }
 
       // Draw HUD on top
       drawHUD(ctx, canvas, player, floor, messageLog, keysCollected, keysRequired);

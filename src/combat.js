@@ -2,6 +2,7 @@
 import { CONFIG, COLORS, WEAPONS } from './constants.js';
 import { Item } from './entities.js';
 import { mulberry32 } from './dungeon.js';
+import { playHit, playMiss, playEnemyDeath, playPlayerHit, playLevelUp, playPickup, playKeyPickup } from './audio.js';
 
 // Roll damage for a weapon
 function rollWeaponDamage(weapon, strength, rng) {
@@ -15,6 +16,7 @@ export function playerAttack(player, enemy, rng, messageLog, renderer) {
   // Hit check
   if (rng() > CONFIG.HIT_CHANCE) {
     messageLog.add(`You miss the ${enemy.name}!`);
+    playMiss();
     return false;
   }
 
@@ -25,6 +27,7 @@ export function playerAttack(player, enemy, rng, messageLog, renderer) {
   renderer.addEffect(enemy.x, enemy.y, `-${damage}`, COLORS.DAMAGE_TEXT);
   renderer.shake(4, 0.88);
   enemy.hitFlash = 150;
+  playHit();
 
   if (enemy.hp <= 0) {
     enemy.hp = 0;
@@ -44,11 +47,14 @@ function handleEnemyDeath(player, enemy, rng, messageLog, renderer) {
   renderer.addEffect(enemy.x, enemy.y, `+${enemy.xpValue} XP`, COLORS.LEVEL_UP_TEXT);
   renderer.spawnDeathParticles(enemy.x, enemy.y, enemy.color);
   renderer.shake(enemy.isBoss ? 12 : 6, 0.82);
+  playEnemyDeath();
 
   // Check level up
   if (player.checkLevelUp()) {
     messageLog.add(`Level up! You are now level ${player.level}! (+5 HP, +1 STR)`);
     renderer.flash('#ffd60a', 400);
+    renderer.spawnLevelUpParticles(player.x, player.y);
+    playLevelUp();
   }
 
   return true; // enemy killed
@@ -68,6 +74,7 @@ export function enemyAttack(enemy, player, rng, messageLog, renderer) {
   renderer.flash('#e63946', 200);
   renderer.shake(5, 0.86);
   player.hitFlash = 150;
+  playPlayerHit();
 
   if (player.hp <= 0) {
     player.causeOfDeath = `Killed by ${enemy.name}`;
@@ -94,13 +101,15 @@ export function pickupItem(player, item, items, messageLog, renderer) {
       break;
     }
 
-    case 'potion':
+    case 'potion': {
       const healed = Math.min(item.data.healAmount, player.maxHp - player.hp);
       player.hp = Math.min(player.hp + item.data.healAmount, player.maxHp);
       messageLog.add(`You drink a Health Potion. (+${healed} HP)`);
       renderer.addEffect(player.x, player.y, `+${healed}`, COLORS.HEAL_TEXT);
       renderer.flash('#06d6a0', 200);
+      playPickup();
       break;
+    }
 
     case 'scroll':
       messageLog.add(`You read the ${item.name}!`);
@@ -111,6 +120,7 @@ export function pickupItem(player, item, items, messageLog, renderer) {
       messageLog.add('You found a Floor Key!');
       renderer.addEffect(item.x, item.y, 'KEY', '#ffd700');
       renderer.flash('#ffd700', 200);
+      playKeyPickup();
       break;
   }
 

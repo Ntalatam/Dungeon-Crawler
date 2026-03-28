@@ -568,6 +568,7 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   line('Check the minimap to find the stairs (yellow dot).');
   line('Hover your mouse over enemies to see their HP and status.');
   line('Press B for colorblind mode (letter indicators on enemies/items).');
+  line('The game has procedural audio - sound effects are generated live.');
 
   // --- Controls Reference ---
   heading('CONTROLS');
