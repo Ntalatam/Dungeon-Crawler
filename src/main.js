@@ -7,7 +7,7 @@ import { Player, Item, spawnEnemies, spawnItems, getItemAt, getEnemyAt, buildEne
 import { updateAllEnemies } from './ai.js';
 import { playerAttack, enemyAttack, pickupItem, generateLoot, applyBlinding } from './combat.js';
 import { MessageLog, drawHUD, drawMainMenu, drawHowToPlay, drawPauseMenu, drawGameOver, drawVictory, drawLevelTransition, drawStore } from './ui.js';
-import { playPickup, playKeyPickup, playDescend, playHazard, playPlayerDeath, playArrowShoot, playBossReveal, toggleMute, isMuted } from './audio.js';
+import { playDescend, playHazard, playPlayerDeath, playArrowShoot, playBossReveal } from './audio.js';
 
 // Canvas setup
 const canvas = document.getElementById('gameCanvas');
@@ -41,7 +41,7 @@ let rng = null;
 // Input state - held-key tracking system
 let heldKeys = new Set();       // Currently held keys
 let lastDirectionKey = null;    // Most recently pressed direction
-let pendingAction = null;       // Non-movement action (e.g. 'e', ' ', '>')
+let pendingAction = null;       // Non-movement action (e.g. 'f', ' ', '>')
 let pauseMenuSelection = 0;
 let pauseMenuHover = -1;        // Mouse hover index for pause menu
 let showHowToPlay = false;
@@ -115,6 +115,150 @@ function updateCursor() {
   }
 }
 
+function setStateWithCursor(nextState) {
+  state = nextState;
+  updateCursor();
+}
+
+function resumeGameplay() {
+  setStateWithCursor(STATE.PLAYING);
+}
+
+function returnToMainMenu() {
+  setStateWithCursor(STATE.MAIN_MENU);
+}
+
+function openPauseMenu() {
+  pauseMenuSelection = 0;
+  pauseMenuHover = -1;
+  setStateWithCursor(STATE.PAUSED);
+}
+
+function openHowToPlay() {
+  showHowToPlay = true;
+  howToPlayScroll = 0;
+}
+
+function isPointInRect(px, py, x, y, width, height) {
+  return px >= x && px <= x + width && py >= y && py <= y + height;
+}
+
+function getMainMenuHoverTarget(mx, my) {
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+
+  if (isPointInRect(mx, my, cx - 150, cy + 117, 300, 46)) {
+    return 'start';
+  }
+
+  if (isPointInRect(mx, my, cx - 100, cy + 185, 200, 38)) {
+    return 'store';
+  }
+
+  const iconX = canvas.width - 55;
+  const iconY = canvas.height - 50;
+  if (Math.hypot(mx - iconX, my - iconY) < 24) {
+    return 'help';
+  }
+
+  return '';
+}
+
+function getPauseButtonIndex(mx, my) {
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  const btnW = 200;
+  const btnH = 36;
+
+  for (let i = 0; i < 3; i++) {
+    const btnY = cy - 10 + i * 44;
+    if (isPointInRect(mx, my, cx - btnW / 2, btnY - btnH / 2, btnW, btnH)) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+function executePauseMenuOption(index) {
+  switch (index) {
+    case 0:
+      resumeGameplay();
+      break;
+    case 1:
+      startNewGame();
+      break;
+    case 2:
+      returnToMainMenu();
+      break;
+  }
+}
+
+function refreshVisibility(markExplored = false) {
+  visible = computeFOV(map, player.x, player.y, CONFIG.FOV_RADIUS);
+  if (markExplored) {
+    updateExplored(explored, visible, player.x, player.y, CONFIG.FOV_RADIUS);
+  }
+  renderer.invalidateMap();
+}
+
+function handleCollectedKey() {
+  keysCollected++;
+  if (keysCollected >= keysRequired) {
+    messageLog.add('The stairs are now unlocked!');
+  }
+}
+
+function handlePickedUpItem(pickedUp) {
+  if (!pickedUp) return false;
+
+  if (pickedUp.type === 'scroll' && pickedUp.subtype === 'blinding') {
+    applyBlinding(player, enemies, visible, messageLog);
+  } else if (pickedUp.type === 'key') {
+    handleCollectedKey();
+  }
+
+  return true;
+}
+
+function triggerGameOver(causeOfDeath = null) {
+  if (causeOfDeath) {
+    player.causeOfDeath = causeOfDeath;
+  }
+  playPlayerDeath();
+  setStateWithCursor(STATE.GAME_OVER);
+  saveHighScores();
+}
+
+function applyHazardDamage({
+  damage,
+  message,
+  effectColor,
+  flashColor = null,
+  flashDuration = 0,
+  shakeIntensity,
+  hitFlash,
+  deathReason,
+}) {
+  player.hp = Math.max(0, player.hp - damage);
+  player.lastDamageTime = Date.now();
+  messageLog.add(message);
+  renderer.addEffect(player.x, player.y, `-${damage}`, effectColor);
+  if (flashColor) {
+    renderer.flash(flashColor, flashDuration);
+  }
+  renderer.shake(shakeIntensity, 0.9);
+  player.hitFlash = hitFlash;
+  playHazard();
+
+  if (player.hp <= 0) {
+    triggerGameOver(deathReason);
+    return true;
+  }
+
+  return false;
+}
+
 document.addEventListener('keydown', (e) => {
   if (GAME_KEYS.has(e.key)) e.preventDefault();
 
@@ -136,8 +280,7 @@ document.addEventListener('keydown', (e) => {
       return;
     }
     if (nk === '?' || nk === 'i') {
-      showHowToPlay = true;
-      howToPlayScroll = 0;
+      openHowToPlay();
       return;
     }
     // Difficulty cycle
@@ -172,8 +315,7 @@ document.addEventListener('keydown', (e) => {
 
   if (state === STATE.GAME_OVER || state === STATE.VICTORY) {
     if (nk === 'r') {
-      state = STATE.MAIN_MENU;
-      updateCursor();
+      returnToMainMenu();
     }
     return;
   }
@@ -187,12 +329,10 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       if (minimapEnlarged) {
         minimapEnlarged = false;
+        updateCursor();
       } else {
-        state = STATE.PAUSED;
-        pauseMenuSelection = 0;
-        pauseMenuHover = -1;
+        openPauseMenu();
       }
-      updateCursor();
       return;
     }
     if (nk === 'm') {
@@ -269,8 +409,7 @@ canvas.addEventListener('click', (e) => {
   }
 
   if (state === STATE.GAME_OVER || state === STATE.VICTORY) {
-    state = STATE.MAIN_MENU;
-    updateCursor();
+    returnToMainMenu();
     return;
   }
 
@@ -292,45 +431,23 @@ canvas.addEventListener('click', (e) => {
 });
 
 function handleMainMenuClick(mx, my) {
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  // Start button area (matches ui.js layout)
-  const startBtnY = cy + 140;
-  if (mx >= cx - 150 && mx <= cx + 150 && my >= startBtnY - 23 && my <= startBtnY + 23) {
-    startNewGame();
-    return;
-  }
-  // Store button area
-  const storeBtnY = cy + 204;
-  if (mx >= cx - 100 && mx <= cx + 100 && my >= storeBtnY - 19 && my <= storeBtnY + 19) {
-    showStore = true;
-    return;
-  }
-  // Help icon area (bottom-right, larger)
-  const iconX = canvas.width - 55;
-  const iconY = canvas.height - 50;
-  if (Math.hypot(mx - iconX, my - iconY) < 24) {
-    showHowToPlay = true;
-    howToPlayScroll = 0;
+  switch (getMainMenuHoverTarget(mx, my)) {
+    case 'start':
+      startNewGame();
+      return;
+    case 'store':
+      showStore = true;
+      return;
+    case 'help':
+      openHowToPlay();
+      return;
   }
 }
 
 function handlePauseClick(mx, my) {
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  const btnW = 200;
-  const btnH = 36;
-  for (let i = 0; i < 3; i++) {
-    const btnY = cy - 10 + i * 44;
-    if (mx >= cx - btnW / 2 && mx <= cx + btnW / 2 &&
-        my >= btnY - btnH / 2 && my <= btnY + btnH / 2) {
-      switch (i) {
-        case 0: state = STATE.PLAYING; updateCursor(); break;
-        case 1: startNewGame(); break;
-        case 2: state = STATE.MAIN_MENU; updateCursor(); break;
-      }
-      return;
-    }
+  const buttonIndex = getPauseButtonIndex(mx, my);
+  if (buttonIndex !== -1) {
+    executePauseMenuOption(buttonIndex);
   }
 }
 
@@ -345,48 +462,24 @@ canvas.addEventListener('mousemove', (e) => {
       canvas.style.cursor = 'pointer';
       return;
     }
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    const startBtnY = cy + 140;
-    const storeBtnY = cy + 204;
-    const iconX = canvas.width - 55;
-    const iconY = canvas.height - 50;
-    if (mx >= cx - 150 && mx <= cx + 150 && my >= startBtnY - 23 && my <= startBtnY + 23) {
-      mainMenuHover = 'start';
-      canvas.style.cursor = 'pointer';
-    } else if (mx >= cx - 100 && mx <= cx + 100 && my >= storeBtnY - 19 && my <= storeBtnY + 19) {
-      mainMenuHover = 'store';
-      canvas.style.cursor = 'pointer';
-    } else if (Math.hypot(mx - iconX, my - iconY) < 24) {
-      mainMenuHover = 'help';
+    mainMenuHover = getMainMenuHoverTarget(mx, my);
+    if (mainMenuHover) {
       canvas.style.cursor = 'pointer';
     } else {
-      mainMenuHover = '';
       canvas.style.cursor = 'default';
     }
     return;
   }
 
   if (state === STATE.PAUSED) {
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    const btnW = 200;
-    const btnH = 36;
-    let hovering = false;
-    for (let i = 0; i < 3; i++) {
-      const btnY = cy - 10 + i * 44;
-      if (mx >= cx - btnW / 2 && mx <= cx + btnW / 2 &&
-          my >= btnY - btnH / 2 && my <= btnY + btnH / 2) {
-        pauseMenuHover = i;
-        pauseMenuSelection = i;
-        canvas.style.cursor = 'pointer';
-        hovering = true;
-        break;
-      }
-    }
-    if (!hovering) {
+    const buttonIndex = getPauseButtonIndex(mx, my);
+    if (buttonIndex === -1) {
       pauseMenuHover = -1;
       canvas.style.cursor = 'default';
+    } else {
+      pauseMenuHover = buttonIndex;
+      pauseMenuSelection = buttonIndex;
+      canvas.style.cursor = 'pointer';
     }
     return;
   }
@@ -444,15 +537,10 @@ function handlePauseInput(key) {
       pauseMenuSelection = Math.min(2, pauseMenuSelection + 1);
       break;
     case 'Enter':
-      switch (pauseMenuSelection) {
-        case 0: state = STATE.PLAYING; updateCursor(); break;
-        case 1: startNewGame(); break;
-        case 2: state = STATE.MAIN_MENU; updateCursor(); break;
-      }
+      executePauseMenuOption(pauseMenuSelection);
       break;
     case 'Escape':
-      state = STATE.PLAYING;
-      updateCursor();
+      resumeGameplay();
       break;
   }
 }
@@ -482,8 +570,7 @@ function startNewGame() {
   messageLog = new MessageLog();
   initFloor();
   gameStartTime = Date.now();
-  state = STATE.PLAYING;
-  updateCursor();
+  resumeGameplay();
 }
 
 function initFloor() {
@@ -542,9 +629,7 @@ function initFloor() {
 
   // Initialize FOV
   explored = createExploredMap();
-  visible = computeFOV(map, player.x, player.y, CONFIG.FOV_RADIUS);
-  updateExplored(explored, visible, player.x, player.y, CONFIG.FOV_RADIUS);
-  renderer.invalidateMap();
+  refreshVisibility(true);
 
   // Initialize renderer
   renderer.generateGrit(mulberry32(seed + floor * 2000));
@@ -625,21 +710,16 @@ function processInput() {
           // Apply hazard effects
           const tile = map[player.y][player.x];
           if (tile === TILE.LAVA) {
-            const lavaDmg = 5;
-            player.hp -= lavaDmg;
-            if (player.hp < 0) player.hp = 0;
-            player.lastDamageTime = Date.now();
-            messageLog.add(`The lava burns you! (-${lavaDmg} HP)`);
-            renderer.addEffect(player.x, player.y, `-${lavaDmg}`, '#ff6600');
-            renderer.flash('#ff3300', 150);
-            renderer.shake(3, 0.9);
-            player.hitFlash = 100;
-            playHazard();
-            if (player.hp <= 0) {
-              player.causeOfDeath = 'Burned to death by lava';
-              playPlayerDeath();
-              saveHighScores();
-              state = STATE.GAME_OVER;
+            if (applyHazardDamage({
+              damage: 5,
+              message: 'The lava burns you! (-5 HP)',
+              effectColor: '#ff6600',
+              flashColor: '#ff3300',
+              flashDuration: 150,
+              shakeIntensity: 3,
+              hitFlash: 100,
+              deathReason: 'Burned to death by lava',
+            })) {
               return;
             }
           } else if (tile === TILE.ICE) {
@@ -652,20 +732,14 @@ function processInput() {
               player.y = slideY;
             }
           } else if (tile === TILE.SPIKE_TRAP) {
-            const spikeDmg = 3;
-            player.hp -= spikeDmg;
-            if (player.hp < 0) player.hp = 0;
-            player.lastDamageTime = Date.now();
-            messageLog.add(`Spike trap! (-${spikeDmg} HP)`);
-            renderer.addEffect(player.x, player.y, `-${spikeDmg}`, '#aaaaaa');
-            renderer.shake(2, 0.9);
-            player.hitFlash = 80;
-            playHazard();
-            if (player.hp <= 0) {
-              player.causeOfDeath = 'Impaled by spike trap';
-              playPlayerDeath();
-              saveHighScores();
-              state = STATE.GAME_OVER;
+            if (applyHazardDamage({
+              damage: 3,
+              message: 'Spike trap! (-3 HP)',
+              effectColor: '#aaaaaa',
+              shakeIntensity: 2,
+              hitFlash: 80,
+              deathReason: 'Impaled by spike trap',
+            })) {
               return;
             }
           }
@@ -673,13 +747,7 @@ function processInput() {
           // Auto-pickup keys only (potions require manual pickup)
           const groundItem = getItemAt(items, player.x, player.y);
           if (groundItem && groundItem.type === 'key') {
-            const pickedUp = pickupItem(player, groundItem, items, messageLog, renderer);
-            if (pickedUp) {
-              keysCollected++;
-              if (keysCollected >= keysRequired) {
-                messageLog.add('The stairs are now unlocked!');
-              }
-            }
+            handlePickedUpItem(pickupItem(player, groundItem, items, messageLog, renderer));
           }
         }
       }
@@ -687,9 +755,7 @@ function processInput() {
   }
 
   if (moved) {
-    visible = computeFOV(map, player.x, player.y, CONFIG.FOV_RADIUS);
-    updateExplored(explored, visible, player.x, player.y, CONFIG.FOV_RADIUS);
-    renderer.invalidateMap();
+    refreshVisibility(true);
   }
 
 }
@@ -699,17 +765,7 @@ function processInput() {
 function tryPickup() {
   const item = getItemAt(items, player.x, player.y);
   if (item) {
-    const pickedUp = pickupItem(player, item, items, messageLog, renderer);
-    if (pickedUp) {
-      if (pickedUp.type === 'scroll' && pickedUp.subtype === 'blinding') {
-        applyBlinding(player, enemies, visible, messageLog);
-      } else if (pickedUp.type === 'key') {
-        keysCollected++;
-        if (keysCollected >= keysRequired) {
-          messageLog.add('The stairs are now unlocked!');
-        }
-      }
-    }
+    handlePickedUpItem(pickupItem(player, item, items, messageLog, renderer));
   } else {
     messageLog.add('Nothing to pick up here.');
   }
@@ -727,15 +783,15 @@ function tryDescend() {
 
     if (floor >= CONFIG.MAX_FLOORS) {
       // Victory!
+      setStateWithCursor(STATE.VICTORY);
       saveHighScores();
-      state = STATE.VICTORY;
       return;
     }
 
     // Start level transition
     floor++;
     transitionProgress = 0;
-    state = STATE.LEVEL_TRANSITION;
+    setStateWithCursor(STATE.LEVEL_TRANSITION);
     playDescend();
     saveHighScores();
   } else {
@@ -760,9 +816,7 @@ function updateEnemiesRealTime() {
       }
       const playerDied = enemyAttack(action.enemy, player, rng, messageLog, renderer);
       if (playerDied) {
-        playPlayerDeath();
-        saveHighScores();
-        state = STATE.GAME_OVER;
+        triggerGameOver();
         return;
       }
     }
@@ -773,8 +827,7 @@ function updateEnemiesRealTime() {
 
   // Update FOV if any enemy moved (might have entered/exited visible area)
   if (needFOVUpdate) {
-    visible = computeFOV(map, player.x, player.y, CONFIG.FOV_RADIUS);
-    renderer.invalidateMap();
+    refreshVisibility();
   }
 }
 
@@ -1014,7 +1067,7 @@ function gameLoop(timestamp) {
       if (transitionProgress >= 1) {
         transitionProgress = 1;
         initFloor();
-        state = STATE.PLAYING;
+        resumeGameplay();
       } else {
         // Draw current game state underneath
         if (map) {
