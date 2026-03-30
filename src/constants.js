@@ -35,6 +35,9 @@ export const COLORS = {
   ITEM_POTION: '#e63946',
   ITEM_SCROLL: '#b185db',
   ITEM_ARMOR: '#c0c0c0',
+  ITEM_GOLD: '#f4d35e',
+  ITEM_WARDING: '#b8c0ff',
+  ITEM_SWIFT: '#4cc9f0',
   STAIRS: '#ffc300',
   STAIRS_LOCKED: '#666666',
   KEY: '#ffd700',
@@ -42,6 +45,12 @@ export const COLORS = {
   LAVA_GLOW: '#ff6600',
   ICE: '#a8d8ea',
   SPIKE_TRAP: '#888888',
+  ROOM_VAULT: '#d6b85a',
+  ROOM_GUARDPOST: '#b25c5c',
+  ROOM_SANCTUARY: '#4cc9b0',
+  FEATURE_FOUNTAIN: '#6ee7ff',
+  FEATURE_SHRINE: '#ffd166',
+  FEATURE_MERCHANT: '#7bd389',
   HUD_BG: '#0d0d1a',
   HUD_TEXT: '#f2e9e4',
   HP_BAR: '#e63946',
@@ -76,6 +85,8 @@ export const CONFIG = {
   MINIMAP_HEIGHT: 260,
   MINIMAP_SCALE: 5,
   MOVE_COOLDOWN_MS: 70,
+  MIN_MOVE_COOLDOWN_MS: 38,
+  MAX_MOVE_COOLDOWN_MS: 120,
   MESSAGE_DISPLAY_TIME: 4000,
   MAX_MESSAGES: 5,
   ENEMY_FOV_RANGE: 6,
@@ -85,7 +96,10 @@ export const CONFIG = {
   HIT_CHANCE: 0.85,
   LOOT_DROP_CHANCE: 0.30,
   POTION_HEAL: 20,
-  BLIND_DURATION: 5000
+  BLIND_DURATION: 5000,
+  ROOM_BANNER_MS: 2800,
+  WARD_BLOCK_VALUE: 2,
+  FOUNTAIN_WARD_CHARGES: 2
 };
 
 // Difficulty scaling per floor
@@ -100,28 +114,123 @@ export const FLOOR_CONFIG = [
 
 // Enemy stats
 export const ENEMY_STATS = {
-  skeleton: { name: 'Skeleton', hp: 45, damage: 4, xp: 5, moveMs: 500, color: COLORS.SKELETON, flees: false },
-  goblin: { name: 'Goblin', hp: 15, damage: 3, xp: 3, moveMs: 300, color: COLORS.GOBLIN, flees: true },
-  troll: { name: 'Troll', hp: 75, damage: 10, xp: 12, moveMs: 700, color: COLORS.TROLL, flees: false },
-  archer: { name: 'Archer', hp: 25, damage: 5, xp: 7, moveMs: 600, color: COLORS.ARCHER, flees: true, ranged: true, range: 5 }
+  skeleton: {
+    name: 'Skeleton',
+    hp: 42,
+    damage: 4,
+    xp: 5,
+    gold: 4,
+    defense: 1,
+    moveMs: 520,
+    color: COLORS.SKELETON,
+    flees: false,
+    hazardCosts: { lava: 10, ice: 2, spikes: 5 },
+    spikeDamageMult: 1.2,
+    role: 'anchor'
+  },
+  goblin: {
+    name: 'Goblin',
+    hp: 15,
+    damage: 3,
+    xp: 3,
+    gold: 3,
+    defense: 0,
+    moveMs: 285,
+    color: COLORS.GOBLIN,
+    flees: true,
+    hazardCosts: { lava: 8, ice: 1, spikes: 2 },
+    slidesOnIce: true,
+    role: 'skirmisher'
+  },
+  troll: {
+    name: 'Troll',
+    hp: 82,
+    damage: 11,
+    xp: 12,
+    gold: 8,
+    defense: 2,
+    moveMs: 720,
+    color: COLORS.TROLL,
+    flees: false,
+    hazardCosts: { lava: 1, ice: 1, spikes: 1 },
+    lavaAffinity: true,
+    spikeDamageMult: 0.25,
+    role: 'juggernaut'
+  },
+  archer: {
+    name: 'Archer',
+    hp: 24,
+    damage: 5,
+    xp: 7,
+    gold: 5,
+    defense: 0,
+    moveMs: 580,
+    color: COLORS.ARCHER,
+    flees: true,
+    ranged: true,
+    range: 6,
+    hazardCosts: { lava: 14, ice: 4, spikes: 8 },
+    prefersHazardBuffer: true,
+    role: 'controller'
+  }
 };
 
 // Weapon definitions
 export const WEAPONS = {
-  fists: { name: 'Fists', minDamage: 1, maxDamage: 2, speedBonus: 0, minFloor: 1 },
-  dagger: { name: 'Dagger', minDamage: 2, maxDamage: 5, speedBonus: 1, minFloor: 1 },
-  shortsword: { name: 'Shortsword', minDamage: 2, maxDamage: 6, speedBonus: 0, minFloor: 1 },
-  longsword: { name: 'Longsword', minDamage: 3, maxDamage: 8, speedBonus: 0, minFloor: 2 },
-  battleaxe: { name: 'Battle Axe', minDamage: 5, maxDamage: 12, speedBonus: -1, minFloor: 3 },
-  cursed_blade: { name: 'Cursed Blade', minDamage: 6, maxDamage: 14, speedBonus: 0, minFloor: 2, cursed: true, hpDrain: 2 }
+  fists: { name: 'Fists', minDamage: 1, maxDamage: 2, speedBonus: 0, hitBonus: 0, reach: 1, minFloor: 1 },
+  dagger: { name: 'Dagger', minDamage: 2, maxDamage: 5, speedBonus: 2, hitBonus: 0.03, reach: 1, minFloor: 1 },
+  rapier: { name: 'Rapier', minDamage: 2, maxDamage: 5, speedBonus: 3, hitBonus: 0.10, reach: 1, minFloor: 1, rare: true },
+  shortsword: { name: 'Shortsword', minDamage: 2, maxDamage: 6, speedBonus: 0, hitBonus: 0.04, reach: 1, minFloor: 1 },
+  longsword: { name: 'Longsword', minDamage: 3, maxDamage: 8, speedBonus: 0, hitBonus: 0.06, reach: 1, minFloor: 2 },
+  warspear: { name: 'War Spear', minDamage: 3, maxDamage: 7, speedBonus: -1, hitBonus: 0.02, reach: 2, minFloor: 2, rare: true },
+  battleaxe: { name: 'Battle Axe', minDamage: 5, maxDamage: 12, speedBonus: -2, hitBonus: -0.04, reach: 1, armorPierce: 1, minFloor: 3 },
+  maul: { name: 'War Maul', minDamage: 6, maxDamage: 10, speedBonus: -3, hitBonus: -0.06, reach: 1, armorPierce: 2, minFloor: 3, rare: true },
+  cursed_blade: { name: 'Cursed Blade', minDamage: 6, maxDamage: 14, speedBonus: 1, hitBonus: 0.08, reach: 1, minFloor: 2, cursed: true, hpDrain: 2, rare: true }
 };
 
 // Armor definitions
 export const ARMORS = {
-  leather: { name: 'Leather Armor', defense: 1, minFloor: 1 },
-  chainmail: { name: 'Chainmail', defense: 2, minFloor: 2 },
-  plate: { name: 'Plate Armor', defense: 3, minFloor: 3 },
-  dragonscale: { name: 'Dragonscale Armor', defense: 5, minFloor: 4 }
+  leather: { name: 'Leather Armor', defense: 1, moveBonus: 1, minFloor: 1 },
+  chainmail: { name: 'Chainmail', defense: 2, moveBonus: 0, minFloor: 2 },
+  brigandine: { name: 'Brigandine', defense: 2, moveBonus: 1, minFloor: 2, rare: true },
+  plate: { name: 'Plate Armor', defense: 4, moveBonus: -1, minFloor: 3 },
+  dragonscale: { name: 'Dragonscale Armor', defense: 4, moveBonus: 1, lavaWard: true, minFloor: 4, rare: true }
+};
+
+export const POTIONS = {
+  health: {
+    name: 'Health Potion',
+    healAmount: CONFIG.POTION_HEAL,
+    color: COLORS.ITEM_POTION,
+    description: `Restore ${CONFIG.POTION_HEAL} HP`,
+    minFloor: 1
+  },
+  warding: {
+    name: 'Warding Elixir',
+    wardCharges: 2,
+    color: COLORS.ITEM_WARDING,
+    description: 'Gain 2 ward charges',
+    minFloor: 1,
+    rare: true
+  },
+  quickstep: {
+    name: 'Quickstep Elixir',
+    speedBonus: 1,
+    color: COLORS.ITEM_SWIFT,
+    description: 'Gain +1 speed until the next floor',
+    minFloor: 2,
+    rare: true
+  }
+};
+
+export const SCROLLS = {
+  blinding: {
+    name: 'Scroll of Blinding',
+    duration: CONFIG.BLIND_DURATION,
+    color: COLORS.ITEM_SCROLL,
+    description: 'Blind the nearest visible enemy',
+    minFloor: 1
+  }
 };
 
 // Difficulty presets
@@ -136,6 +245,7 @@ export const STATE = {
   MAIN_MENU: 'MAIN_MENU',
   PLAYING: 'PLAYING',
   PAUSED: 'PAUSED',
+  INTERACT_MENU: 'INTERACT_MENU',
   LEVEL_TRANSITION: 'LEVEL_TRANSITION',
   GAME_OVER: 'GAME_OVER',
   VICTORY: 'VICTORY'
