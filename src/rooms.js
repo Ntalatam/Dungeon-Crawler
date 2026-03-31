@@ -151,19 +151,27 @@ export function getRoomSpawnPlan(room, rng, floor) {
   }
 }
 
-export function getRoomHazardPlan(room, rng) {
+export function getRoomHazardPlan(room, rng, floor = 1) {
   switch (room.type) {
     case 'sanctuary':
     case 'entry':
       return { chance: 0, count: 0 };
     case 'vault':
-      return { chance: 0.08, count: 1 + Math.floor(rng() * 3) };
+      return floor === 1
+        ? { chance: 0.16, count: 1 + Math.floor(rng() * 2) }
+        : { chance: 0.08, count: 1 + Math.floor(rng() * 3) };
     case 'guardpost':
-      return { chance: 0.34, count: 4 + Math.floor(rng() * 3) };
+      return floor === 1
+        ? { chance: 0.24, count: 2 + Math.floor(rng() * 2) }
+        : { chance: 0.34, count: 4 + Math.floor(rng() * 3) };
     case 'exit':
-      return { chance: 0.16, count: 2 + Math.floor(rng() * 3) };
+      return floor === 1
+        ? { chance: 0.10, count: 1 + Math.floor(rng() * 2) }
+        : { chance: 0.16, count: 2 + Math.floor(rng() * 3) };
     default:
-      return { chance: 0.22, count: 2 + Math.floor(rng() * 4) };
+      return floor === 1
+        ? { chance: 0.08, count: 1 + Math.floor(rng() * 2) }
+        : { chance: 0.22, count: 2 + Math.floor(rng() * 4) };
   }
 }
 
@@ -192,11 +200,9 @@ export function getRoomBanner(room, feature = null) {
   if (!room) return null;
 
   const title = feature && feature.bannerTitle ? feature.bannerTitle : room.title;
-  let subtitle = room.subtitle;
+  let subtitle = feature && feature.bannerSubtitle ? feature.bannerSubtitle : room.subtitle;
 
-  if (room.type === 'sanctuary' && feature) {
-    subtitle = feature.bannerSubtitle || subtitle;
-  } else if (room.type === 'guardpost') {
+  if (room.type === 'guardpost') {
     subtitle = 'Watch the lanes. Expect crossfire and sturdier defenders.';
   } else if (room.type === 'vault') {
     subtitle = 'Grab value quickly before pressure catches up.';

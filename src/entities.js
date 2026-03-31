@@ -207,7 +207,20 @@ function weightedPick(rng, entries) {
   return entries[entries.length - 1][0];
 }
 
-function getRoomEnemyWeights(roomType) {
+function getRoomEnemyWeights(roomType, floor) {
+  if (floor === 1) {
+    switch (roomType) {
+      case 'guardpost':
+        return { skeleton: 2, goblin: 3, archer: 0, troll: 0 };
+      case 'vault':
+        return { skeleton: 1, goblin: 4, archer: 0, troll: 0 };
+      case 'exit':
+        return { skeleton: 2, goblin: 2, archer: 0, troll: 0 };
+      default:
+        return { skeleton: 2, goblin: 3, archer: 0, troll: 0 };
+    }
+  }
+
   switch (roomType) {
     case 'guardpost':
       return { skeleton: 4, goblin: 1, archer: 4, troll: 2 };
@@ -220,8 +233,8 @@ function getRoomEnemyWeights(roomType) {
   }
 }
 
-function chooseEnemyType(availableTypes, roomType, rng) {
-  const weights = getRoomEnemyWeights(roomType);
+function chooseEnemyType(availableTypes, roomType, floor, rng) {
+  const weights = getRoomEnemyWeights(roomType, floor);
   return weightedPick(rng, availableTypes.map(type => [type, weights[type] || 1]));
 }
 
@@ -263,12 +276,20 @@ export function spawnEnemies(floor, entitySpawns, rooms, rng) {
       return true;
     });
 
-    type = chooseEnemyType(availableTypes, spawn.room?.type || 'normal', rng);
+    type = chooseEnemyType(availableTypes, spawn.room?.type || 'normal', floor, rng);
     if (type === 'troll') trollCount++;
     if (type === 'archer') archerCount++;
 
     const enemy = new Enemy(spawn.x, spawn.y, type);
     enemy.spawnRoom = spawn.room;
+
+    if (floor === 1 && type === 'skeleton') {
+      enemy.hp = 34;
+      enemy.maxHp = 34;
+      enemy.baseDamage = 3;
+      enemy.defense = 0;
+      enemy.moveMs = 560;
+    }
 
     // Scale goblin stats per floor so they stay relevant
     if (type === 'goblin' && floor > 1) {

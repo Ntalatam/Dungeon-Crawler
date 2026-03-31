@@ -7,7 +7,7 @@ import { Player, Item, spawnEnemies, spawnItems, getItemAt, getEnemyAt, buildEne
 import { updateAllEnemies } from './ai.js';
 import { playerAttack, enemyAttack, pickupItem, generateLoot, applyBlinding, resolveEnemyDefeat, describeItem, recalculatePlayerDefense } from './combat.js';
 import { buildRoomLookup, getRoomBanner } from './rooms.js';
-import { createSanctuaryFeatures, getInteractableAt, getInteractableDescription, createInteractionMenu, applyInteraction } from './interactables.js';
+import { createFloorInteractables, getInteractableAt, getInteractableDescription, createInteractionMenu, applyInteraction } from './interactables.js';
 import { applyEnemyHazardStep } from './hazards.js';
 import { MessageLog, drawHUD, drawMainMenu, drawHowToPlay, drawPauseMenu, drawGameOver, drawVictory, drawLevelTransition, drawInteractionMenu, drawRoomBanner, getPauseMenuLayout, getInteractionMenuLayout } from './ui.js';
 import { playDescend, playHazard, playPlayerDeath, playArrowShoot, playBossReveal, toggleMute, isMuted } from './audio.js';
@@ -920,7 +920,7 @@ function initFloor() {
   rooms = dungeon.rooms;
   endRoom = dungeon.endRoom;
   roomLookup = buildRoomLookup(rooms);
-  interactables = createSanctuaryFeatures(rooms, floor, rng);
+  interactables = createFloorInteractables(rooms, dungeon.startRoom, floor, rng);
 
   // Create or reset player position
   if (!player || floor === 1) {
@@ -1401,74 +1401,6 @@ function gameLoop(timestamp) {
   }
 
   requestAnimationFrame(gameLoop);
-}
-
-if (typeof window !== 'undefined') {
-  window.__dungeonCrawlerDebug = {
-    getState() {
-      return {
-        state,
-        seed,
-        floor,
-        difficulty,
-        keysCollected,
-        keysRequired,
-        currentRoom: currentRoom ? {
-          type: currentRoom.type,
-          title: currentRoom.title,
-          subtitle: currentRoom.subtitle
-        } : null,
-        roomBanner: activeRoomBanner,
-        player: player ? {
-          x: player.x,
-          y: player.y,
-          hp: player.hp,
-          maxHp: player.maxHp,
-          level: player.level,
-          xp: player.xp,
-          strength: player.strength,
-          defense: player.defense,
-          gold: player.gold,
-          wardCharges: player.wardCharges,
-          weapon: player.weapon,
-          armor: player.armor,
-          floorMoveBonus: player.floorMoveBonus,
-          moveBonus: player.moveBonus
-        } : null,
-        tileAtPlayer: player ? map?.[player.y]?.[player.x] ?? null : null,
-        enemies: enemies.filter(enemy => enemy.isAlive).map(enemy => ({
-          name: enemy.name,
-          type: enemy.type,
-          x: enemy.x,
-          y: enemy.y,
-          hp: enemy.hp,
-          maxHp: enemy.maxHp,
-          state: enemy.state,
-          isBoss: !!enemy.isBoss,
-          isMiniBoss: !!enemy.isMiniBoss
-        })),
-        items: items.map(item => ({
-          name: item.name,
-          type: item.type,
-          subtype: item.subtype,
-          x: item.x,
-          y: item.y
-        })),
-        interactables: interactables.map(feature => ({
-          name: feature.name,
-          type: feature.type,
-          x: feature.x,
-          y: feature.y,
-          used: feature.used
-        })),
-        recentMessages: messageLog.getRecent().map(entry => entry.text),
-        allMessages: messageLog.messages.map(entry => entry.text),
-        showHowToPlay,
-        minimapEnlarged,
-        muted: isMuted()
-      };
-    }
-  };
 }
 
 // Start the game loop

@@ -48,6 +48,7 @@ export const COLORS = {
   ROOM_VAULT: '#d6b85a',
   ROOM_GUARDPOST: '#b25c5c',
   ROOM_SANCTUARY: '#4cc9b0',
+  FEATURE_CACHE: '#9ad1ff',
   FEATURE_FOUNTAIN: '#6ee7ff',
   FEATURE_SHRINE: '#ffd166',
   FEATURE_MERCHANT: '#7bd389',
@@ -105,7 +106,8 @@ export const CONFIG = {
 // Difficulty scaling per floor
 export const FLOOR_CONFIG = [
   null, // index 0 unused
-  { enemyMin: 5, enemyMax: 8, types: ['skeleton', 'goblin'], itemDensity: 'high', keysRequired: 1, miniBossChance: 0 },
+  // Floor 1 stays tense, but now leaves more room for room reads and opening build choices.
+  { enemyMin: 4, enemyMax: 6, types: ['skeleton', 'goblin'], itemDensity: 'high', keysRequired: 1, miniBossChance: 0 },
   { enemyMin: 8, enemyMax: 12, types: ['skeleton', 'goblin', 'archer'], archerMax: 2, itemDensity: 'medium', keysRequired: 1, miniBossChance: 0.10 },
   { enemyMin: 10, enemyMax: 15, types: ['skeleton', 'goblin', 'archer', 'troll'], trollMax: 2, archerMax: 3, itemDensity: 'medium', keysRequired: 2, miniBossChance: 0.15 },
   { enemyMin: 12, enemyMax: 18, types: ['skeleton', 'goblin', 'archer', 'troll'], trollMax: 4, archerMax: 4, itemDensity: 'low', keysRequired: 2, miniBossChance: 0.20 },

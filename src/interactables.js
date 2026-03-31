@@ -52,7 +52,7 @@ function createMerchantStock(floor, rng) {
       kind: 'weapon',
       title: weapon.name,
       description: describeWeapon(weapon),
-      cost: 14 + floor * 4 + (weapon.rare ? 5 : 0),
+      cost: 9 + floor * 3 + (weapon.rare ? 4 : 0),
       data: weapon
     },
     {
@@ -60,7 +60,7 @@ function createMerchantStock(floor, rng) {
       kind: 'armor',
       title: armor.name,
       description: describeArmor(armor),
-      cost: 14 + floor * 4 + (armor.rare ? 4 : 0),
+      cost: 9 + floor * 3 + (armor.rare ? 3 : 0),
       data: armor
     },
     {
@@ -68,7 +68,7 @@ function createMerchantStock(floor, rng) {
       kind: 'boon',
       title: 'Honed Edge',
       description: '+1 STR and +3% accuracy',
-      cost: 16 + floor * 3,
+      cost: 8 + floor * 2,
       data: { strength: 1, hitChanceBonus: 0.03 }
     },
     {
@@ -76,7 +76,7 @@ function createMerchantStock(floor, rng) {
       kind: 'boon',
       title: 'Ward Seal',
       description: '+1 DEF and +1 ward charge',
-      cost: 15 + floor * 3,
+      cost: 7 + floor * 2,
       data: { defense: 1, wardCharges: 1 }
     }
   ];
@@ -108,14 +108,74 @@ function createShrineChoices() {
   ];
 }
 
+function createFieldCacheChoices() {
+  return [
+    {
+      id: 'vanguard_kit',
+      kind: 'cache',
+      title: 'Vanguard Kit',
+      description: `${WEAPONS.dagger.name} • ${describeWeapon(WEAPONS.dagger)}`,
+      data: { weapon: cloneData(WEAPONS.dagger) }
+    },
+    {
+      id: 'bulwark_kit',
+      kind: 'cache',
+      title: 'Bulwark Kit',
+      description: `${ARMORS.leather.name} • ${describeArmor(ARMORS.leather)} • +1 ward`,
+      data: { armor: cloneData(ARMORS.leather), wardCharges: 1 }
+    },
+    {
+      id: 'scout_kit',
+      kind: 'cache',
+      title: 'Scout Kit',
+      description: '+1 speed this floor • +1 ward • +2% accuracy',
+      data: { floorMoveBonus: 1, wardCharges: 1, hitChanceBonus: 0.02 }
+    }
+  ];
+}
+
+function getFeaturePosition(room, type) {
+  if (type !== 'cache') {
+    return { x: room.center.x, y: room.center.y };
+  }
+
+  const candidates = [
+    { x: room.center.x + 1, y: room.center.y },
+    { x: room.center.x - 1, y: room.center.y },
+    { x: room.center.x, y: room.center.y + 1 },
+    { x: room.center.x, y: room.center.y - 1 }
+  ];
+
+  return candidates.find(pos =>
+    pos.x > room.x &&
+    pos.x < room.x + room.width - 1 &&
+    pos.y > room.y &&
+    pos.y < room.y + room.height - 1
+  ) || { x: room.center.x, y: room.center.y };
+}
+
 function createFeature(room, type, floor, rng) {
+  const position = getFeaturePosition(room, type);
   const base = {
-    x: room.center.x,
-    y: room.center.y,
+    x: position.x,
+    y: position.y,
     room,
     type,
     used: false
   };
+
+  if (type === 'cache') {
+    return {
+      ...base,
+      name: 'Field Cache',
+      color: COLORS.FEATURE_CACHE,
+      prompt: 'Claim a field kit',
+      description: 'Choose one opening loadout before you push deeper.',
+      bannerTitle: 'Entry Hall — Field Cache',
+      bannerSubtitle: 'Take one starting kit and commit to a line immediately.',
+      choices: createFieldCacheChoices()
+    };
+  }
 
   if (type === 'fountain') {
     return {
@@ -172,6 +232,14 @@ export function createSanctuaryFeatures(rooms, floor, rng) {
   });
 }
 
+export function createFloorInteractables(rooms, startRoom, floor, rng) {
+  const features = createSanctuaryFeatures(rooms, floor, rng);
+  if (floor === 1 && startRoom) {
+    features.unshift(createFeature(startRoom, 'cache', floor, rng));
+  }
+  return features;
+}
+
 export function getInteractableAt(interactables, x, y) {
   return interactables.find(feature => feature.x === x && feature.y === y && !feature.used) || null;
 }
@@ -186,6 +254,22 @@ export function createInteractionMenu(feature, player) {
 
   if (feature.type === 'fountain') {
     return null;
+  }
+
+  if (feature.type === 'cache') {
+    return {
+      feature,
+      title: feature.name,
+      subtitle: 'Choose one opening kit. The rest of the cache will be lost.',
+      color: feature.color,
+      options: feature.choices.map(choice => ({
+        id: choice.id,
+        title: choice.title,
+        description: choice.description,
+        cost: null,
+        disabled: false
+      }))
+    };
   }
 
   if (feature.type === 'merchant') {
@@ -225,6 +309,26 @@ function applyStatDelta(player, field, delta) {
 
 export function applyInteraction(feature, optionId, player, messageLog, renderer) {
   if (!feature || feature.used) {
+    return { closeMenu: true };
+  }
+
+  if (feature.type === 'cache') {
+    const choice = feature.choices.find(entry => entry.id === optionId);
+    if (!choice) {
+      return { closeMenu: true };
+    }
+
+    if (choice.data.weapon) player.weapon = cloneData(choice.data.weapon);
+    if (choice.data.armor) player.armor = cloneData(choice.data.armor);
+    if (choice.data.wardCharges) applyStatDelta(player, 'wardCharges', choice.data.wardCharges);
+    if (choice.data.floorMoveBonus) applyStatDelta(player, 'floorMoveBonus', choice.data.floorMoveBonus);
+    if (choice.data.hitChanceBonus) applyStatDelta(player, 'hitChanceBonus', choice.data.hitChanceBonus);
+    recalculatePlayerDefense(player);
+
+    feature.used = true;
+    messageLog.add(`You claim the ${choice.title}. The rest of the cache is abandoned.`);
+    renderer.addEffect(feature.x, feature.y, choice.title.toUpperCase(), feature.color);
+    renderer.flash(feature.color, 180);
     return { closeMenu: true };
   }
 

@@ -681,6 +681,18 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(px, py - 8 + bob, 3, 0, Math.PI * 2);
       ctx.fill();
+    } else if (feature.type === 'cache') {
+      ctx.fillStyle = feature.color;
+      ctx.fillRect(px - 6, py - 5 + bob, 12, 10);
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px - 6, py - 5 + bob, 12, 10);
+      ctx.beginPath();
+      ctx.moveTo(px - 5, py - 1 + bob);
+      ctx.lineTo(px + 5, py - 1 + bob);
+      ctx.moveTo(px - 3, py + 2 + bob);
+      ctx.lineTo(px + 3, py + 2 + bob);
+      ctx.stroke();
     } else if (feature.type === 'merchant') {
       ctx.fillStyle = feature.color;
       ctx.beginPath();
@@ -705,7 +717,7 @@ export class Renderer {
     }
 
     if (this.colorblindMode) {
-      const letters = { fountain: 'F', merchant: 'M', shrine: 'S' };
+      const letters = { cache: 'C', fountain: 'F', merchant: 'M', shrine: 'S' };
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';

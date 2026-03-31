@@ -25,6 +25,17 @@ export class MessageLog {
   }
 }
 
+function fitTextToWidth(ctx, text, maxWidth) {
+  if (!text || ctx.measureText(text).width <= maxWidth) return text;
+
+  let fitted = text;
+  while (fitted.length > 1 && ctx.measureText(`${fitted}...`).width > maxWidth) {
+    fitted = fitted.slice(0, -1);
+  }
+
+  return `${fitted}...`;
+}
+
 // Draw the in-game HUD
 export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 0, keysRequired = 0, context = {}) {
   const hudH = CONFIG.HUD_HEIGHT;
@@ -114,13 +125,25 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.fillText(`Lv ${player.level}`, hpBarX + barWidth / 2, xpY);
 
   const centerX = hpBarX + barWidth + 44;
+  const statsX = centerX + 330;
+  const statGap = canvas.width < 1500 ? 64 : 70;
+  const roomNameX = centerX + 90;
+  const roomNameMaxW = Math.max(100, statsX - roomNameX - 18);
+  const promptMinX = statsX + statGap * 3 + (keysRequired > 0 ? 132 : 44);
+  const desiredPromptW = canvas.width < 1400 ? 280 : 340;
+  const promptBoxX = Math.min(
+    Math.max(promptMinX, canvas.width - desiredPromptW - 18),
+    canvas.width - 208
+  );
+  const promptW = Math.max(190, canvas.width - promptBoxX - 18);
+
   ctx.textAlign = 'left';
   ctx.fillStyle = COLORS.HUD_TEXT;
   ctx.font = 'bold 16px monospace';
   ctx.fillText(`Floor ${floor}`, centerX, hudY + 20);
   ctx.fillStyle = roomAccent;
   ctx.font = 'bold 13px monospace';
-  ctx.fillText(roomName, centerX + 90, hudY + 20);
+  ctx.fillText(fitTextToWidth(ctx, roomName, roomNameMaxW), roomNameX, hudY + 20);
 
   ctx.fillStyle = player.weapon.cursed ? '#8b00ff' : COLORS.ITEM_WEAPON;
   ctx.font = '13px monospace';
@@ -141,8 +164,6 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
     hudY + 53
   );
 
-  const statsX = centerX + 330;
-  const statGap = 70;
   const stats = [
     { label: 'STR', value: player.strength, color: COLORS.HUD_TEXT },
     { label: 'DEF', value: player.defense, color: COLORS.ITEM_ARMOR },
@@ -170,22 +191,21 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
     ctx.fillText(keysCollected >= keysRequired ? 'Stairs unlocked' : 'Seal remains on the stairs', keyX, hudY + 31);
   }
 
-  const promptX = canvas.width - 310;
   ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(promptX - 10, hudY + 8, 300, 30);
+  ctx.fillRect(promptBoxX, hudY + 8, promptW, 30);
   ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-  ctx.strokeRect(promptX - 10, hudY + 8, 300, 30);
+  ctx.strokeRect(promptBoxX, hudY + 8, promptW, 30);
   ctx.textAlign = 'left';
   ctx.fillStyle = COLORS.PLAYER;
   ctx.font = 'bold 11px monospace';
-  ctx.fillText('ACTION', promptX, hudY + 20);
+  ctx.fillText('ACTION', promptBoxX + 10, hudY + 20);
   ctx.fillStyle = '#d0d0d0';
   ctx.font = '11px monospace';
-  ctx.fillText(promptText, promptX, hudY + 33);
+  ctx.fillText(fitTextToWidth(ctx, promptText, promptW - 20), promptBoxX + 10, hudY + 33);
 
   ctx.fillStyle = context.audioMuted ? '#e63946' : '#666';
   ctx.font = '11px monospace';
-  ctx.fillText(context.audioMuted ? 'Audio muted' : 'Audio on', promptX, hudY + 53);
+  ctx.fillText(context.audioMuted ? 'Audio muted' : 'Audio on', promptBoxX + 10, hudY + 53);
 
   ctx.fillStyle = '#666';
   ctx.font = '12px monospace';

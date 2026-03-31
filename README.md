@@ -8,6 +8,7 @@ A browser-playable vanilla-JavaScript roguelike built on HTML5 Canvas 2D. The ga
 - Real-time-with-cooldowns combat loop instead of strict turn passing
 - 8-direction movement, fog of war, minimap, hover tooltips, and local high scores
 - Distinct room archetypes: vaults, guard posts, sanctuaries, entry halls, and sealed stairwells
+- Entry-hall field cache that gives every run an immediate opening-kit decision
 - Sanctuary systems: healing fountains, oath shrines, and Quartermaster merchants
 - Hazard-aware combat where lava, ice, and spike traps affect both the player and enemies
 - Build-defining loot: reach weapons, armor tradeoffs, warding, speed elixirs, cursed gear, and gold economy
@@ -68,6 +69,7 @@ Rooms are intentionally specialized:
 - **Vaults** lean toward richer loot with lighter resistance
 - **Guard Posts** create stronger ranged pressure and tougher defense
 - **Sanctuaries** remove enemy pressure and offer a one-time high-impact feature
+- **Entry Halls** now open with a one-time field cache that sets your first-floor posture
 - **Sealed Stairwells** are progression checkpoints gated by floor keys
 
 Each new room type is called out with a banner and reinforced with distinct floor accents on the map and minimap.
@@ -82,6 +84,14 @@ Sanctuaries are safe rooms with meaningful run-shaping choices:
 
 Quartermasters are meant to create build decisions, not just emergency healing. Gold comes from enemy kills and gold caches.
 
+### Entry Hall Cache
+
+Every floor-1 run now starts with a **Field Cache** in the entry hall. You choose one opening kit, then the rest is abandoned:
+
+- **Vanguard Kit** for faster early offense
+- **Bulwark Kit** for armor and warding
+- **Scout Kit** for mobility and accuracy
+
 ### Hazards
 
 Hazards affect everyone:
@@ -89,6 +99,8 @@ Hazards affect everyone:
 - **Lava** burns most units but empowers lava-affine enemies
 - **Ice** extends movement and lets some enemies slide farther
 - **Spike traps** punish careless routing and can finish weakened targets
+
+Floor 1 starts with lighter spike/ice reads so the hazard system shows up before the deeper lava-heavy floors.
 
 Enemy pathing now accounts for hazard preferences, so archers try to use hazard buffers, fragile enemies avoid danger more aggressively, and juggernauts may ignore it.
 

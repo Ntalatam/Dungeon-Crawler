@@ -310,30 +310,50 @@ export function generateDungeon(seed, floor) {
     }
   }
 
-  // Place environmental hazards (floor 2+)
-  if (floor >= 2) {
-    for (const room of rooms) {
-      if (room === startRoom || room === endRoom) continue;
+  // Place environmental hazards. Floor 1 starts with light trap/ice reads; lava arrives later.
+  let hazardsPlaced = 0;
+  for (const room of rooms) {
+    if (room === startRoom || room === endRoom) continue;
 
-      const hazardPlan = getRoomHazardPlan(room, rng);
-      if (hazardPlan.chance <= 0 || rng() >= hazardPlan.chance) continue;
+    const hazardPlan = getRoomHazardPlan(room, rng, floor);
+    if (hazardPlan.chance <= 0 || rng() >= hazardPlan.chance) continue;
 
-      // Pick a hazard type for this room (or none)
-      const hazardRoll = rng();
-      let hazardType = null;
-      if (hazardRoll < 0.35) hazardType = TILE.LAVA;
-      else if (hazardRoll < 0.65) hazardType = TILE.ICE;
-      else hazardType = TILE.SPIKE_TRAP;
+    const hazardRoll = rng();
+    let hazardType = null;
+    if (floor === 1) {
+      hazardType = hazardRoll < 0.6 ? TILE.SPIKE_TRAP : TILE.ICE;
+    } else if (hazardRoll < 0.35) {
+      hazardType = TILE.LAVA;
+    } else if (hazardRoll < 0.65) {
+      hazardType = TILE.ICE;
+    } else {
+      hazardType = TILE.SPIKE_TRAP;
+    }
 
-      if (hazardType) {
-        const count = hazardPlan.count;
-        for (let h = 0; h < count; h++) {
-          const hx = randInt(rng, room.x + 1, room.x + room.width - 2);
-          const hy = randInt(rng, room.y + 1, room.y + room.height - 2);
-          // Don't overwrite stairs or doors
-          if (map[hy][hx] === TILE.FLOOR) {
-            map[hy][hx] = hazardType;
-          }
+    if (hazardType) {
+      const count = hazardPlan.count;
+      for (let h = 0; h < count; h++) {
+        const hx = randInt(rng, room.x + 1, room.x + room.width - 2);
+        const hy = randInt(rng, room.y + 1, room.y + room.height - 2);
+        // Don't overwrite stairs or doors
+        if (map[hy][hx] === TILE.FLOOR) {
+          map[hy][hx] = hazardType;
+          hazardsPlaced++;
+        }
+      }
+    }
+  }
+
+  if (floor === 1 && hazardsPlaced === 0) {
+    const fallbackRoom = rooms.find(room => room.type === 'guardpost') ||
+      rooms.find(room => room.type === 'vault') ||
+      rooms.find(room => room.type === 'normal');
+    if (fallbackRoom) {
+      for (let i = 0; i < 2; i++) {
+        const hx = randInt(rng, fallbackRoom.x + 1, fallbackRoom.x + fallbackRoom.width - 2);
+        const hy = randInt(rng, fallbackRoom.y + 1, fallbackRoom.y + fallbackRoom.height - 2);
+        if (map[hy][hx] === TILE.FLOOR) {
+          map[hy][hx] = i === 0 ? TILE.SPIKE_TRAP : TILE.ICE;
         }
       }
     }
