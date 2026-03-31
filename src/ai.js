@@ -350,6 +350,32 @@ function doPatrol(enemy, map, enemies, currentTime, rng) {
   return null;
 }
 
+function getPressuredAdvance(enemy, player, map, enemies) {
+  const currentDist = chebyshev(enemy.x, enemy.y, player.x, player.y);
+  const commitThreshold = enemy.type === 'goblin' ? 4 : enemy.type === 'skeleton' ? 3 : 5;
+  const candidates = [];
+
+  for (const dir of DIRS) {
+    const nx = enemy.x + dir.x;
+    const ny = enemy.y + dir.y;
+    if (nx < 0 || nx >= CONFIG.MAP_WIDTH || ny < 0 || ny >= CONFIG.MAP_HEIGHT) continue;
+    if (!isWalkable(map[ny][nx]) || getEnemyAt(enemies, nx, ny)) continue;
+    if (dir.x !== 0 && dir.y !== 0) {
+      if (!isWalkable(map[enemy.y][nx]) || !isWalkable(map[ny][enemy.x])) continue;
+    }
+
+    const nextDist = chebyshev(nx, ny, player.x, player.y);
+    if (nextDist >= currentDist) continue;
+
+    const hazardCost = scoreHazardTile(enemy, map, nx, ny);
+    if (hazardCost > commitThreshold) continue;
+    candidates.push({ x: nx, y: ny, score: (currentDist - nextDist) * 4 - hazardCost });
+  }
+
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates[0] || null;
+}
+
 // Chase behavior: use A* to pursue player
 function doChase(enemy, player, map, enemies, currentTime, rng) {
   // Hesitation: non-goblins sometimes pause (sizing up the player)
@@ -358,10 +384,18 @@ function doChase(enemy, player, map, enemies, currentTime, rng) {
     return null; // Skip turn — looks like caution
   }
 
+  const dist = manhattan(enemy.x, enemy.y, player.x, player.y);
+  if (!enemy.isRanged && dist <= 3) {
+    const pressuredAdvance = getPressuredAdvance(enemy, player, map, enemies);
+    if (pressuredAdvance) {
+      enemy.path = [];
+      return moveEnemy(enemy, enemies, currentTime, pressuredAdvance.x, pressuredAdvance.y);
+    }
+  }
+
   // Recalculate path periodically
   if (currentTime - enemy.lastPathTime >= CONFIG.PATHFIND_INTERVAL || enemy.path.length === 0) {
     // Only pathfind if within range
-    const dist = manhattan(enemy.x, enemy.y, player.x, player.y);
     if (dist <= CONFIG.PATHFIND_RANGE) {
       enemy.path = findPath(map, enemy.x, enemy.y, player.x, player.y, enemies, enemy);
       enemy.lastPathTime = currentTime;

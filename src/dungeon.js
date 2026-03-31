@@ -216,13 +216,13 @@ function findFarthestRoom(startRoom, rooms) {
 }
 
 // Get spawn points inside a room (excluding center and edges)
-function getRoomSpawnPoints(room, count, rng) {
+function getRoomSpawnPoints(room, count, rng, map) {
   const points = [];
   const available = [];
 
   for (let x = room.x + 1; x < room.x + room.width - 1; x++) {
     for (let y = room.y + 1; y < room.y + room.height - 1; y++) {
-      if (x !== room.center.x || y !== room.center.y) {
+      if (map[y][x] === TILE.FLOOR && (x !== room.center.x || y !== room.center.y)) {
         available.push({ x, y });
       }
     }
@@ -235,6 +235,81 @@ function getRoomSpawnPoints(room, count, rng) {
   }
 
   return available.slice(0, Math.min(count, available.length));
+}
+
+function isInteriorPoint(room, x, y) {
+  return x > room.x &&
+    x < room.x + room.width - 1 &&
+    y > room.y &&
+    y < room.y + room.height - 1 &&
+    !(x === room.center.x && y === room.center.y);
+}
+
+function addHazardPoint(points, seen, room, x, y) {
+  if (!isInteriorPoint(room, x, y)) return;
+  const key = `${x},${y}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  points.push({ x, y });
+}
+
+function getPatternedHazardPoints(room, count, rng) {
+  const points = [];
+  const seen = new Set();
+
+  if (room.type === 'guardpost' || room.type === 'exit') {
+    const horizontal = room.width >= room.height ? rng() < 0.7 : rng() < 0.35;
+    const offsets = [0, -1, 1, -2, 2, -3, 3, -4, 4];
+    if (horizontal) {
+      const laneY = Math.max(room.y + 1, Math.min(room.y + room.height - 2, room.center.y + randInt(rng, -1, 1)));
+      for (const offset of offsets) {
+        addHazardPoint(points, seen, room, room.center.x + offset, laneY);
+        if (points.length >= count) return points;
+      }
+    } else {
+      const laneX = Math.max(room.x + 1, Math.min(room.x + room.width - 2, room.center.x + randInt(rng, -1, 1)));
+      for (const offset of offsets) {
+        addHazardPoint(points, seen, room, laneX, room.center.y + offset);
+        if (points.length >= count) return points;
+      }
+    }
+  }
+
+  const clusterOffsets = [
+    { x: -1, y: 0 }, { x: 1, y: 0 }, { x: 0, y: -1 }, { x: 0, y: 1 },
+    { x: -2, y: 0 }, { x: 2, y: 0 }, { x: 0, y: -2 }, { x: 0, y: 2 },
+    { x: -1, y: -1 }, { x: 1, y: -1 }, { x: -1, y: 1 }, { x: 1, y: 1 }
+  ];
+
+  for (const offset of clusterOffsets) {
+    addHazardPoint(points, seen, room, room.center.x + offset.x, room.center.y + offset.y);
+    if (points.length >= count) return points;
+  }
+
+  return points;
+}
+
+function chooseHazardTile(room, floor, rng) {
+  const roll = rng();
+
+  if (floor === 1) {
+    return roll < 0.6 ? TILE.SPIKE_TRAP : TILE.ICE;
+  }
+
+  if (room.type === 'guardpost' || room.type === 'exit') {
+    if (roll < 0.35) return TILE.LAVA;
+    return TILE.SPIKE_TRAP;
+  }
+
+  if (room.type === 'vault') {
+    if (roll < 0.22) return TILE.LAVA;
+    if (roll < 0.5) return TILE.SPIKE_TRAP;
+    return TILE.ICE;
+  }
+
+  if (roll < 0.25) return TILE.LAVA;
+  if (roll < 0.85) return TILE.SPIKE_TRAP;
+  return TILE.ICE;
 }
 
 // Main dungeon generation function
@@ -288,28 +363,6 @@ export function generateDungeon(seed, floor) {
   // Assign room archetypes with guaranteed special rooms when possible
   assignRoomArchetypes(rooms, startRoom, endRoom, floor, rng);
 
-  // Generate spawn points for entities and items
-  const entitySpawns = [];
-  const itemSpawns = [];
-
-  for (const room of rooms) {
-    if (room === startRoom) continue; // Don't spawn in start room
-
-    const { enemyCount, itemCount } = getRoomSpawnPlan(room, rng, floor);
-
-    const spawns = getRoomSpawnPoints(room, enemyCount + itemCount, rng);
-
-    // First points for enemies
-    for (let i = 0; i < Math.min(enemyCount, spawns.length); i++) {
-      entitySpawns.push({ ...spawns[i], room });
-    }
-
-    // Remaining points for items
-    for (let i = enemyCount; i < spawns.length; i++) {
-      itemSpawns.push({ ...spawns[i], room });
-    }
-  }
-
   // Place environmental hazards. Floor 1 starts with light trap/ice reads; lava arrives later.
   let hazardsPlaced = 0;
   for (const room of rooms) {
@@ -318,27 +371,34 @@ export function generateDungeon(seed, floor) {
     const hazardPlan = getRoomHazardPlan(room, rng, floor);
     if (hazardPlan.chance <= 0 || rng() >= hazardPlan.chance) continue;
 
-    const hazardRoll = rng();
-    let hazardType = null;
-    if (floor === 1) {
-      hazardType = hazardRoll < 0.6 ? TILE.SPIKE_TRAP : TILE.ICE;
-    } else if (hazardRoll < 0.35) {
-      hazardType = TILE.LAVA;
-    } else if (hazardRoll < 0.65) {
-      hazardType = TILE.ICE;
-    } else {
-      hazardType = TILE.SPIKE_TRAP;
-    }
+    const hazardType = chooseHazardTile(room, floor, rng);
 
     if (hazardType) {
       const count = hazardPlan.count;
-      for (let h = 0; h < count; h++) {
+      let placed = 0;
+
+      // Deeper floors bias hazards toward room midlines so combat naturally contests them.
+      if (floor >= 2) {
+        const patternedPoints = getPatternedHazardPoints(room, count, rng);
+        for (const point of patternedPoints) {
+          if (map[point.y][point.x] === TILE.FLOOR) {
+            map[point.y][point.x] = hazardType;
+            hazardsPlaced++;
+            placed++;
+          }
+        }
+      }
+
+      let attempts = 0;
+      while (placed < count && attempts < count * 6) {
+        attempts++;
         const hx = randInt(rng, room.x + 1, room.x + room.width - 2);
         const hy = randInt(rng, room.y + 1, room.y + room.height - 2);
         // Don't overwrite stairs or doors
         if (map[hy][hx] === TILE.FLOOR) {
           map[hy][hx] = hazardType;
           hazardsPlaced++;
+          placed++;
         }
       }
     }
@@ -356,6 +416,25 @@ export function generateDungeon(seed, floor) {
           map[hy][hx] = i === 0 ? TILE.SPIKE_TRAP : TILE.ICE;
         }
       }
+    }
+  }
+
+  // Generate spawn points for entities and items after hazards are placed so combat flows through them.
+  const entitySpawns = [];
+  const itemSpawns = [];
+
+  for (const room of rooms) {
+    if (room === startRoom) continue; // Don't spawn in start room
+
+    const { enemyCount, itemCount } = getRoomSpawnPlan(room, rng, floor);
+    const spawns = getRoomSpawnPoints(room, enemyCount + itemCount, rng, map);
+
+    for (let i = 0; i < Math.min(enemyCount, spawns.length); i++) {
+      entitySpawns.push({ ...spawns[i], room });
+    }
+
+    for (let i = enemyCount; i < spawns.length; i++) {
+      itemSpawns.push({ ...spawns[i], room });
     }
   }
 

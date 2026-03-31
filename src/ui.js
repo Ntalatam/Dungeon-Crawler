@@ -36,9 +36,30 @@ function fitTextToWidth(ctx, text, maxWidth) {
   return `${fitted}...`;
 }
 
+function wrapTextToWidth(ctx, text, maxWidth) {
+  if (!text) return [''];
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+    if (ctx.measureText(next).width <= maxWidth || !current) {
+      current = next;
+    } else {
+      lines.push(current);
+      current = word;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
 // Draw the in-game HUD
 export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 0, keysRequired = 0, context = {}) {
-  const hudH = CONFIG.HUD_HEIGHT;
+  const compactLayout = canvas.width < 1280;
+  const hudH = compactLayout ? 92 : CONFIG.HUD_HEIGHT;
   const hudY = canvas.height - hudH;
   const padding = 15;
   const barWidth = 180;
@@ -125,44 +146,12 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.fillText(`Lv ${player.level}`, hpBarX + barWidth / 2, xpY);
 
   const centerX = hpBarX + barWidth + 44;
-  const statsX = centerX + 330;
-  const statGap = canvas.width < 1500 ? 64 : 70;
   const roomNameX = centerX + 90;
-  const roomNameMaxW = Math.max(100, statsX - roomNameX - 18);
-  const promptMinX = statsX + statGap * 3 + (keysRequired > 0 ? 132 : 44);
-  const desiredPromptW = canvas.width < 1400 ? 280 : 340;
-  const promptBoxX = Math.min(
-    Math.max(promptMinX, canvas.width - desiredPromptW - 18),
-    canvas.width - 208
-  );
-  const promptW = Math.max(190, canvas.width - promptBoxX - 18);
-
-  ctx.textAlign = 'left';
-  ctx.fillStyle = COLORS.HUD_TEXT;
-  ctx.font = 'bold 16px monospace';
-  ctx.fillText(`Floor ${floor}`, centerX, hudY + 20);
-  ctx.fillStyle = roomAccent;
-  ctx.font = 'bold 13px monospace';
-  ctx.fillText(fitTextToWidth(ctx, roomName, roomNameMaxW), roomNameX, hudY + 20);
-
-  ctx.fillStyle = player.weapon.cursed ? '#8b00ff' : COLORS.ITEM_WEAPON;
-  ctx.font = '13px monospace';
-  ctx.fillText(player.weapon.name, centerX, hudY + 38);
-  ctx.fillStyle = player.armor ? COLORS.ITEM_ARMOR : '#666';
-  ctx.fillText(player.armor ? player.armor.name : 'No armor', centerX + 145, hudY + 38);
-
   const weaponNotes = [];
   if (player.weapon.reach > 1) weaponNotes.push(`reach ${player.weapon.reach}`);
   if (player.weapon.hitBonus) weaponNotes.push(`+${Math.round(player.weapon.hitBonus * 100)}% hit`);
   if (player.weapon.armorPierce) weaponNotes.push(`pierce ${player.weapon.armorPierce}`);
   const avgDmg = ((player.weapon.minDamage + player.weapon.maxDamage) / 2).toFixed(1);
-  ctx.fillStyle = '#888';
-  ctx.font = '11px monospace';
-  ctx.fillText(
-    `${player.weapon.minDamage}-${player.weapon.maxDamage} dmg (avg ${avgDmg})${weaponNotes.length ? `, ${weaponNotes.join(', ')}` : ''}`,
-    centerX,
-    hudY + 53
-  );
 
   const stats = [
     { label: 'STR', value: player.strength, color: COLORS.HUD_TEXT },
@@ -173,39 +162,142 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
     { label: 'KILL', value: player.kills, color: COLORS.HUD_TEXT }
   ];
 
-  ctx.font = '12px monospace';
-  stats.forEach((stat, index) => {
-    const x = statsX + (index % 3) * statGap;
-    const y = hudY + 16 + Math.floor(index / 3) * 18;
-    ctx.fillStyle = stat.color;
-    ctx.fillText(`${stat.label}: ${stat.value}`, x, y);
-  });
+  if (compactLayout) {
+    const statsX = Math.max(centerX + 238, canvas.width - 430);
+    const statGap = 68;
+    const keyX = statsX + statGap * 3 + 6;
+    const roomNameMaxW = Math.max(120, statsX - roomNameX - 18);
+    const promptBoxX = centerX;
+    const promptBoxY = hudY + 56;
+    const promptW = Math.max(260, canvas.width - promptBoxX - 16);
+    const audioText = context.audioMuted ? 'Audio muted' : 'Audio on';
 
-  if (keysRequired > 0) {
-    const keyX = statsX + statGap * 3 + 12;
-    ctx.fillStyle = keysCollected >= keysRequired ? '#06d6a0' : '#ffd700';
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.HUD_TEXT;
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText(`Floor ${floor}`, centerX, hudY + 20);
+    ctx.fillStyle = roomAccent;
     ctx.font = 'bold 13px monospace';
-    ctx.fillText(`KEYS ${keysCollected}/${keysRequired}`, keyX, hudY + 16);
+    ctx.fillText(fitTextToWidth(ctx, roomName, roomNameMaxW), roomNameX, hudY + 20);
+
+    ctx.fillStyle = player.weapon.cursed ? '#8b00ff' : COLORS.ITEM_WEAPON;
+    ctx.font = '13px monospace';
+    ctx.fillText(player.weapon.name, centerX, hudY + 38);
+    ctx.fillStyle = player.armor ? COLORS.ITEM_ARMOR : '#666';
+    ctx.fillText(player.armor ? player.armor.name : 'No armor', centerX + 145, hudY + 38);
+
     ctx.fillStyle = '#888';
     ctx.font = '11px monospace';
-    ctx.fillText(keysCollected >= keysRequired ? 'Stairs unlocked' : 'Seal remains on the stairs', keyX, hudY + 31);
+    ctx.fillText(
+      fitTextToWidth(
+        ctx,
+        `${player.weapon.minDamage}-${player.weapon.maxDamage} dmg (avg ${avgDmg})${weaponNotes.length ? `, ${weaponNotes.join(', ')}` : ''}`,
+        statsX - centerX - 16
+      ),
+      centerX,
+      hudY + 53
+    );
+
+    ctx.font = '12px monospace';
+    stats.forEach((stat, index) => {
+      const x = statsX + (index % 3) * statGap;
+      const y = hudY + 16 + Math.floor(index / 3) * 18;
+      ctx.fillStyle = stat.color;
+      ctx.fillText(`${stat.label}: ${stat.value}`, x, y);
+    });
+
+    if (keysRequired > 0) {
+      ctx.fillStyle = keysCollected >= keysRequired ? '#06d6a0' : '#ffd700';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText(`KEYS ${keysCollected}/${keysRequired}`, keyX, hudY + 16);
+      ctx.fillStyle = '#888';
+      ctx.font = '11px monospace';
+      ctx.fillText(keysCollected >= keysRequired ? 'Stairs unlocked' : 'Seal remains on the stairs', keyX, hudY + 31);
+    }
+
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(promptBoxX, promptBoxY, promptW, 24);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.strokeRect(promptBoxX, promptBoxY, promptW, 24);
+    ctx.fillStyle = COLORS.PLAYER;
+    ctx.font = 'bold 10px monospace';
+    ctx.fillText('ACTION', promptBoxX + 10, promptBoxY + 15);
+    ctx.fillStyle = '#d0d0d0';
+    ctx.font = '10px monospace';
+    const promptTextMaxW = promptW - 120 - ctx.measureText(audioText).width;
+    ctx.fillText(fitTextToWidth(ctx, promptText, Math.max(140, promptTextMaxW)), promptBoxX + 64, promptBoxY + 15);
+    ctx.fillStyle = context.audioMuted ? '#e63946' : '#666';
+    ctx.textAlign = 'right';
+    ctx.fillText(audioText, promptBoxX + promptW - 10, promptBoxY + 15);
+    ctx.textAlign = 'left';
+  } else {
+    const statsX = centerX + 330;
+    const statGap = canvas.width < 1500 ? 64 : 70;
+    const roomNameMaxW = Math.max(100, statsX - roomNameX - 18);
+    const promptMinX = statsX + statGap * 3 + (keysRequired > 0 ? 132 : 44);
+    const desiredPromptW = canvas.width < 1400 ? 280 : 340;
+    const promptBoxX = Math.min(
+      Math.max(promptMinX, canvas.width - desiredPromptW - 18),
+      canvas.width - 208
+    );
+    const promptW = Math.max(190, canvas.width - promptBoxX - 18);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.HUD_TEXT;
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText(`Floor ${floor}`, centerX, hudY + 20);
+    ctx.fillStyle = roomAccent;
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText(fitTextToWidth(ctx, roomName, roomNameMaxW), roomNameX, hudY + 20);
+
+    ctx.fillStyle = player.weapon.cursed ? '#8b00ff' : COLORS.ITEM_WEAPON;
+    ctx.font = '13px monospace';
+    ctx.fillText(player.weapon.name, centerX, hudY + 38);
+    ctx.fillStyle = player.armor ? COLORS.ITEM_ARMOR : '#666';
+    ctx.fillText(player.armor ? player.armor.name : 'No armor', centerX + 145, hudY + 38);
+
+    ctx.fillStyle = '#888';
+    ctx.font = '11px monospace';
+    ctx.fillText(
+      `${player.weapon.minDamage}-${player.weapon.maxDamage} dmg (avg ${avgDmg})${weaponNotes.length ? `, ${weaponNotes.join(', ')}` : ''}`,
+      centerX,
+      hudY + 53
+    );
+
+    ctx.font = '12px monospace';
+    stats.forEach((stat, index) => {
+      const x = statsX + (index % 3) * statGap;
+      const y = hudY + 16 + Math.floor(index / 3) * 18;
+      ctx.fillStyle = stat.color;
+      ctx.fillText(`${stat.label}: ${stat.value}`, x, y);
+    });
+
+    if (keysRequired > 0) {
+      const keyX = statsX + statGap * 3 + 12;
+      ctx.fillStyle = keysCollected >= keysRequired ? '#06d6a0' : '#ffd700';
+      ctx.font = 'bold 13px monospace';
+      ctx.fillText(`KEYS ${keysCollected}/${keysRequired}`, keyX, hudY + 16);
+      ctx.fillStyle = '#888';
+      ctx.font = '11px monospace';
+      ctx.fillText(keysCollected >= keysRequired ? 'Stairs unlocked' : 'Seal remains on the stairs', keyX, hudY + 31);
+    }
+
+    ctx.fillStyle = 'rgba(255,255,255,0.06)';
+    ctx.fillRect(promptBoxX, hudY + 8, promptW, 30);
+    ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+    ctx.strokeRect(promptBoxX, hudY + 8, promptW, 30);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = COLORS.PLAYER;
+    ctx.font = 'bold 11px monospace';
+    ctx.fillText('ACTION', promptBoxX + 10, hudY + 20);
+    ctx.fillStyle = '#d0d0d0';
+    ctx.font = '11px monospace';
+    ctx.fillText(fitTextToWidth(ctx, promptText, promptW - 20), promptBoxX + 10, hudY + 33);
+
+    ctx.fillStyle = context.audioMuted ? '#e63946' : '#666';
+    ctx.font = '11px monospace';
+    ctx.fillText(context.audioMuted ? 'Audio muted' : 'Audio on', promptBoxX + 10, hudY + 53);
   }
-
-  ctx.fillStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillRect(promptBoxX, hudY + 8, promptW, 30);
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-  ctx.strokeRect(promptBoxX, hudY + 8, promptW, 30);
-  ctx.textAlign = 'left';
-  ctx.fillStyle = COLORS.PLAYER;
-  ctx.font = 'bold 11px monospace';
-  ctx.fillText('ACTION', promptBoxX + 10, hudY + 20);
-  ctx.fillStyle = '#d0d0d0';
-  ctx.font = '11px monospace';
-  ctx.fillText(fitTextToWidth(ctx, promptText, promptW - 20), promptBoxX + 10, hudY + 33);
-
-  ctx.fillStyle = context.audioMuted ? '#e63946' : '#666';
-  ctx.font = '11px monospace';
-  ctx.fillText(context.audioMuted ? 'Audio muted' : 'Audio on', promptBoxX + 10, hudY + 53);
 
   ctx.fillStyle = '#666';
   ctx.font = '12px monospace';
@@ -514,11 +606,14 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
   }
 
   function line(text, color) {
-    y += 26;
     ctx.fillStyle = color || '#ccc';
     ctx.font = '15px monospace';
     ctx.textAlign = 'left';
-    ctx.fillText(text, panelX + 10, y);
+    const wrapped = wrapTextToWidth(ctx, text, panelW - 20);
+    for (const segment of wrapped) {
+      y += 24;
+      ctx.fillText(segment, panelX + 10, y);
+    }
   }
 
   function gap() { y += 10; }

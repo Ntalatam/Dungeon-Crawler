@@ -52,14 +52,17 @@ export function applyEnemyHazardStep(enemy, map, oldX, oldY, enemies, player, vi
   const hazardKey = getHazardKey(tile);
   if (!hazardKey) return { died: false, moved: false };
 
-  const canLog = !!(visible?.[enemy.y]?.[enemy.x]);
+  const inView = !!(visible?.[enemy.y]?.[enemy.x]);
+  const nearby = Math.max(Math.abs(enemy.x - player.x), Math.abs(enemy.y - player.y)) <= 6;
+  const canLog = inView || nearby;
+  const subject = inView ? `The ${enemy.name}` : `Nearby, the ${enemy.name.toLowerCase()}`;
 
   if (hazardKey === 'lava') {
     if (enemy.lavaAffinity) {
       const wasEmpowered = (enemy.empoweredAttacks || 0) > 0;
       enemy.empoweredAttacks = Math.max(enemy.empoweredAttacks || 0, 2);
       if (canLog && !wasEmpowered) {
-        messageLog.add(`The ${enemy.name} wades through lava and grows fiercer!`);
+        messageLog.add(`${subject} wades through lava and grows fiercer!`);
         renderer.addEffect(enemy.x, enemy.y, 'ENRAGED', COLORS.LAVA_GLOW);
       }
       return { died: false, moved: false };
@@ -68,7 +71,7 @@ export function applyEnemyHazardStep(enemy, map, oldX, oldY, enemies, player, vi
     const damage = 4;
     enemy.hp = Math.max(0, enemy.hp - damage);
     if (canLog) {
-      messageLog.add(`The ${enemy.name} burns in the lava!`);
+      messageLog.add(`${subject} burns in the lava!`);
       renderer.addEffect(enemy.x, enemy.y, `-${damage}`, COLORS.LAVA_GLOW);
     }
     return { died: enemy.hp <= 0, moved: false, cause: 'burned away by lava' };
@@ -78,7 +81,7 @@ export function applyEnemyHazardStep(enemy, map, oldX, oldY, enemies, player, vi
     const damage = Math.max(1, Math.round(3 * (enemy.spikeDamageMult ?? 1)));
     enemy.hp = Math.max(0, enemy.hp - damage);
     if (canLog) {
-      messageLog.add(`The ${enemy.name} staggers over the spike trap.`);
+      messageLog.add(`${subject} staggers over the spike trap.`);
       renderer.addEffect(enemy.x, enemy.y, `-${damage}`, COLORS.SPIKE_TRAP);
     }
     return { died: enemy.hp <= 0, moved: false, cause: 'was impaled on spike traps' };
@@ -108,7 +111,7 @@ export function applyEnemyHazardStep(enemy, map, oldX, oldY, enemies, player, vi
     enemy.x = slideX;
     enemy.y = slideY;
     if (canLog) {
-      messageLog.add(`The ${enemy.name} skitters across the ice!`);
+      messageLog.add(`${subject} skitters across the ice!`);
       renderer.addEffect(enemy.x, enemy.y, 'SLIDE', COLORS.ICE);
     }
     return { died: false, moved: true };

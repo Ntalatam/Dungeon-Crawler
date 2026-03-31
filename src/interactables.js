@@ -28,18 +28,28 @@ function describeArmor(armor) {
   return `+${armor.defense} DEF${extras.length ? ` • ${extras.join(' • ')}` : ''}`;
 }
 
+function chooseMerchantOffer(pool, fallback, floor, rng) {
+  if (pool.length === 0) return cloneData(fallback);
+
+  const rarePool = pool.filter(entry => entry.rare);
+  const standardPool = pool.filter(entry => !entry.rare);
+  const rareChance = floor <= 2 ? 0.18 : 0.3;
+  const activePool = rarePool.length > 0 && rng() < rareChance ? rarePool : (standardPool.length > 0 ? standardPool : pool);
+  return cloneData(activePool[Math.floor(rng() * activePool.length)] || fallback);
+}
+
 function chooseMerchantWeapon(floor, rng) {
+  const maxOfferFloor = floor <= 2 ? floor : floor + 1;
   const pool = Object.values(WEAPONS)
-    .filter(weapon => weapon.name !== 'Fists' && weapon.minFloor <= floor + 1)
-    .sort((a, b) => (b.rare ? 1 : 0) - (a.rare ? 1 : 0) || b.minFloor - a.minFloor);
-  return cloneData(pool[Math.floor(rng() * Math.min(pool.length, 4))] || WEAPONS.shortsword);
+    .filter(weapon => weapon.name !== 'Fists' && weapon.minFloor <= maxOfferFloor);
+  return chooseMerchantOffer(pool, WEAPONS.shortsword, floor, rng);
 }
 
 function chooseMerchantArmor(floor, rng) {
+  const maxOfferFloor = floor <= 2 ? floor : floor + 1;
   const pool = Object.values(ARMORS)
-    .filter(armor => armor.minFloor <= floor + 1)
-    .sort((a, b) => (b.rare ? 1 : 0) - (a.rare ? 1 : 0) || b.minFloor - a.minFloor);
-  return cloneData(pool[Math.floor(rng() * Math.min(pool.length, 4))] || ARMORS.chainmail);
+    .filter(armor => armor.minFloor <= maxOfferFloor);
+  return chooseMerchantOffer(pool, ARMORS.chainmail, floor, rng);
 }
 
 function createMerchantStock(floor, rng) {
@@ -52,7 +62,7 @@ function createMerchantStock(floor, rng) {
       kind: 'weapon',
       title: weapon.name,
       description: describeWeapon(weapon),
-      cost: 9 + floor * 3 + (weapon.rare ? 4 : 0),
+      cost: 7 + floor * 2 + (weapon.rare ? 3 : 0),
       data: weapon
     },
     {
@@ -60,7 +70,7 @@ function createMerchantStock(floor, rng) {
       kind: 'armor',
       title: armor.name,
       description: describeArmor(armor),
-      cost: 9 + floor * 3 + (armor.rare ? 3 : 0),
+      cost: 7 + floor * 2 + (armor.rare ? 2 : 0),
       data: armor
     },
     {
@@ -68,7 +78,7 @@ function createMerchantStock(floor, rng) {
       kind: 'boon',
       title: 'Honed Edge',
       description: '+1 STR and +3% accuracy',
-      cost: 8 + floor * 2,
+      cost: 4 + floor * 2,
       data: { strength: 1, hitChanceBonus: 0.03 }
     },
     {
@@ -76,7 +86,7 @@ function createMerchantStock(floor, rng) {
       kind: 'boon',
       title: 'Ward Seal',
       description: '+1 DEF and +1 ward charge',
-      cost: 7 + floor * 2,
+      cost: 3 + floor * 2,
       data: { defense: 1, wardCharges: 1 }
     }
   ];

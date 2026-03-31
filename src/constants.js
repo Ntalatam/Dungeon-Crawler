@@ -126,7 +126,7 @@ export const ENEMY_STATS = {
     moveMs: 520,
     color: COLORS.SKELETON,
     flees: false,
-    hazardCosts: { lava: 10, ice: 2, spikes: 5 },
+    hazardCosts: { lava: 8, ice: 2, spikes: 3 },
     spikeDamageMult: 1.2,
     role: 'anchor'
   },
@@ -140,7 +140,7 @@ export const ENEMY_STATS = {
     moveMs: 285,
     color: COLORS.GOBLIN,
     flees: true,
-    hazardCosts: { lava: 8, ice: 1, spikes: 2 },
+    hazardCosts: { lava: 6, ice: 1, spikes: 1 },
     slidesOnIce: true,
     role: 'skirmisher'
   },
@@ -171,7 +171,7 @@ export const ENEMY_STATS = {
     flees: true,
     ranged: true,
     range: 6,
-    hazardCosts: { lava: 14, ice: 4, spikes: 8 },
+    hazardCosts: { lava: 11, ice: 4, spikes: 5 },
     prefersHazardBuffer: true,
     role: 'controller'
   }
