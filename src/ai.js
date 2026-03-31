@@ -1,8 +1,9 @@
 // AI System - A* Pathfinding + Enemy Finite State Machine
-import { CONFIG, AI_STATE } from './constants.js';
+import { CONFIG, AI_STATE, TILE } from './constants.js';
 import { isWalkable } from './dungeon.js';
 import { hasLineOfSight } from './fov.js';
-import { getEnemyAt } from './entities.js';
+import { getEnemyAt, updateEnemySpatialGrid } from './entities.js';
+import { countHazardsBetween, getEnemyHazardCost } from './hazards.js';
 
 // Priority Queue (min-heap) for A* open set
 class MinHeap {
@@ -137,7 +138,8 @@ export function findPath(map, startX, startY, goalX, goalY, enemies, selfEnemy) 
         if (blockingEnemy && blockingEnemy !== selfEnemy) continue;
       }
 
-      const tentativeG = current.g + 1;
+      const stepCost = getEnemyHazardCost(selfEnemy, map[ny][nx]);
+      const tentativeG = current.g + stepCost;
       const prevG = gScore[nKey];
 
       if (prevG !== undefined && tentativeG >= prevG) continue;
@@ -285,13 +287,32 @@ function pickPatrolTarget(enemy, map, rng) {
     for (let attempts = 0; attempts < 10; attempts++) {
       const x = room.x + Math.floor(rng() * room.width);
       const y = room.y + Math.floor(rng() * room.height);
-      if (isWalkable(map[y][x])) {
+      if (isWalkable(map[y][x]) && getEnemyHazardCost(enemy, map[y][x]) <= 5) {
         enemy.patrolTarget = { x, y };
         return;
       }
     }
   }
   enemy.patrolTarget = null;
+}
+
+function moveEnemy(enemy, enemies, currentTime, nx, ny) {
+  const oldX = enemy.x;
+  const oldY = enemy.y;
+  enemy.x = nx;
+  enemy.y = ny;
+  enemy.lastMoveTime = currentTime;
+  updateEnemySpatialGrid(enemies, enemy, oldX, oldY);
+
+  const action = { type: 'move', fromX: oldX, fromY: oldY };
+  if (enemy.hazardTrail) {
+    action.leaveHazard = { x: oldX, y: oldY, tile: TILE.LAVA };
+  }
+  return action;
+}
+
+function scoreHazardTile(enemy, map, x, y) {
+  return getEnemyHazardCost(enemy, map[y][x]);
 }
 
 // Patrol behavior: move toward patrol target
@@ -322,11 +343,7 @@ function doPatrol(enemy, map, enemies, currentTime, rng) {
     const ny = enemy.y + move.y;
     if (nx >= 0 && nx < CONFIG.MAP_WIDTH && ny >= 0 && ny < CONFIG.MAP_HEIGHT &&
         isWalkable(map[ny][nx]) && !getEnemyAt(enemies, nx, ny)) {
-      enemy.x = nx;
-      enemy.y = ny;
-      enemy.lastMoveTime = currentTime;
-      // Goblins patrol quickly, no recovery. Others recover.
-      return { type: 'move' };
+      return moveEnemy(enemy, enemies, currentTime, nx, ny);
     }
   }
 
@@ -336,7 +353,7 @@ function doPatrol(enemy, map, enemies, currentTime, rng) {
 // Chase behavior: use A* to pursue player
 function doChase(enemy, player, map, enemies, currentTime, rng) {
   // Hesitation: non-goblins sometimes pause (sizing up the player)
-  if (enemy.type !== 'goblin' && rng() < 0.15) {
+  if (enemy.type !== 'goblin' && !enemy.isBoss && rng() < 0.12) {
     enemy.lastMoveTime = currentTime;
     return null; // Skip turn — looks like caution
   }
@@ -359,12 +376,8 @@ function doChase(enemy, player, map, enemies, currentTime, rng) {
     }
     // Check if next step is clear
     if (isWalkable(map[next.y][next.x]) && !getEnemyAt(enemies, next.x, next.y)) {
-      enemy.x = next.x;
-      enemy.y = next.y;
       enemy.path.shift();
-      enemy.lastMoveTime = currentTime;
-      // Goblins chase without recovery (fast & dangerous), others pause after moving
-      return { type: 'move' };
+      return moveEnemy(enemy, enemies, currentTime, next.x, next.y);
     } else {
       // Path blocked, recalculate next time
       enemy.path = [];
@@ -401,7 +414,7 @@ function doReposition(enemy, player, map, enemies, currentTime, rng) {
     if (nx === enemy.x && ny === enemy.y) continue;
     if (nx >= 0 && nx < CONFIG.MAP_WIDTH && ny >= 0 && ny < CONFIG.MAP_HEIGHT &&
         isWalkable(map[ny][nx]) && !getEnemyAt(enemies, nx, ny)) {
-      candidates.push({ x: nx, y: ny });
+      candidates.push({ x: nx, y: ny, score: -scoreHazardTile(enemy, map, nx, ny) });
     }
   }
   if (candidates.length === 0) {
@@ -409,11 +422,10 @@ function doReposition(enemy, player, map, enemies, currentTime, rng) {
     enemy.attackCooldown = enemy.moveMs;
     return { type: 'attack', enemy };
   }
-  const target = candidates[Math.floor(rng() * candidates.length)];
-  enemy.x = target.x;
-  enemy.y = target.y;
-  enemy.lastMoveTime = currentTime;
-  return { type: 'move' };
+  candidates.sort((a, b) => b.score - a.score);
+  const topCandidates = candidates.slice(0, Math.min(3, candidates.length));
+  const target = topCandidates[Math.floor(rng() * topCandidates.length)];
+  return moveEnemy(enemy, enemies, currentTime, target.x, target.y);
 }
 
 // Ranged attack: shoot from distance, try to maintain range
@@ -425,6 +437,14 @@ function doRangedAttack(enemy, player, map, enemies, currentTime, rng) {
     return doFlee(enemy, player, map, enemies, currentTime);
   }
 
+  const bestTile = findBestRangedTile(enemy, player, map, enemies);
+  const currentScore = scoreRangedTile(enemy, player, map, enemy.x, enemy.y);
+
+  // Reposition to a clearly better firing tile before shooting
+  if (bestTile && (bestTile.x !== enemy.x || bestTile.y !== enemy.y) && bestTile.score > currentScore + 1) {
+    return moveEnemy(enemy, enemies, currentTime, bestTile.x, bestTile.y);
+  }
+
   // Shoot if in range and has line of sight
   if (dist <= enemy.attackRange && hasLineOfSight(map, enemy.x, enemy.y, player.x, player.y)) {
     enemy.lastMoveTime = currentTime;
@@ -433,6 +453,44 @@ function doRangedAttack(enemy, player, map, enemies, currentTime, rng) {
 
   // Otherwise chase closer
   return doChase(enemy, player, map, enemies, currentTime, rng);
+}
+
+function scoreRangedTile(enemy, player, map, x, y) {
+  if (!hasLineOfSight(map, x, y, player.x, player.y)) return -Infinity;
+
+  const distance = chebyshev(x, y, player.x, player.y);
+  if (distance <= 1) return -Infinity;
+
+  let score = 0;
+  score -= Math.abs(distance - enemy.attackRange) * 2.6;
+  score -= scoreHazardTile(enemy, map, x, y) * 0.7;
+
+  if (enemy.prefersHazardBuffer) {
+    score += countHazardsBetween(map, x, y, player.x, player.y) * 2.5;
+  }
+
+  return score;
+}
+
+function findBestRangedTile(enemy, player, map, enemies) {
+  const candidates = [{ x: enemy.x, y: enemy.y }];
+  for (const dir of DIRS) {
+    const nx = enemy.x + dir.x;
+    const ny = enemy.y + dir.y;
+    if (nx < 0 || nx >= CONFIG.MAP_WIDTH || ny < 0 || ny >= CONFIG.MAP_HEIGHT) continue;
+    if (!isWalkable(map[ny][nx])) continue;
+    if (getEnemyAt(enemies, nx, ny)) continue;
+    candidates.push({ x: nx, y: ny });
+  }
+
+  let best = null;
+  for (const candidate of candidates) {
+    const score = scoreRangedTile(enemy, player, map, candidate.x, candidate.y);
+    if (!best || score > best.score) {
+      best = { ...candidate, score };
+    }
+  }
+  return best;
 }
 
 // Flee behavior: run away from player
@@ -450,20 +508,22 @@ function doFlee(enemy, player, map, enemies, currentTime) {
     { x: dy, y: -dx }   // other perpendicular
   ];
 
+  const candidates = [];
   for (const move of escapes) {
     if (move.x === 0 && move.y === 0) continue;
     const nx = enemy.x + move.x;
     const ny = enemy.y + move.y;
     if (nx >= 0 && nx < CONFIG.MAP_WIDTH && ny >= 0 && ny < CONFIG.MAP_HEIGHT &&
         isWalkable(map[ny][nx]) && !getEnemyAt(enemies, nx, ny)) {
-      enemy.x = nx;
-      enemy.y = ny;
-      enemy.lastMoveTime = currentTime;
-      return { type: 'move' };
+      const distanceScore = manhattan(nx, ny, player.x, player.y) * 2;
+      const hazardScore = scoreHazardTile(enemy, map, nx, ny);
+      candidates.push({ x: nx, y: ny, score: distanceScore - hazardScore });
     }
   }
 
-  return null;
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.score - a.score);
+  return moveEnemy(enemy, enemies, currentTime, candidates[0].x, candidates[0].y);
 }
 
 // Update all enemies

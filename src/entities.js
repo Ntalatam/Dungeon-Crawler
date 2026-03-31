@@ -1,5 +1,5 @@
 // Entity System - Player, Enemy, Item classes
-import { CONFIG, COLORS, ENEMY_STATS, WEAPONS, ARMORS, AI_STATE, FLOOR_CONFIG, TILE } from './constants.js';
+import { CONFIG, COLORS, ENEMY_STATS, WEAPONS, ARMORS, POTIONS, SCROLLS, AI_STATE, FLOOR_CONFIG, TILE } from './constants.js';
 import { isWalkable } from './dungeon.js';
 
 // Player class
@@ -21,6 +21,12 @@ export class Player {
     this.kills = 0;
     this.causeOfDeath = '';
     this.lastDamageTime = 0;
+    this.gold = 0;
+    this.wardCharges = 0;
+    this.moveBonus = 0;
+    this.floorMoveBonus = 0;
+    this.hitChanceBonus = 0;
+    this.bonusDefense = 0;
   }
 
   get isAlive() {
@@ -65,6 +71,8 @@ export class Enemy {
     this.maxHp = stats.hp;
     this.baseDamage = stats.damage;
     this.xpValue = stats.xp;
+    this.goldValue = stats.gold || 0;
+    this.defense = stats.defense || 0;
     this.moveMs = stats.moveMs;
     this.color = stats.color;
     this.canFlee = stats.flees;
@@ -79,6 +87,14 @@ export class Enemy {
     this.isRanged = stats.ranged || false;
     this.attackRange = stats.range || 1;
     this.lastRangedAttack = 0;
+    this.hazardCosts = { ...(stats.hazardCosts || {}) };
+    this.slidesOnIce = !!stats.slidesOnIce;
+    this.lavaAffinity = !!stats.lavaAffinity;
+    this.spikeDamageMult = stats.spikeDamageMult ?? 1;
+    this.prefersHazardBuffer = !!stats.prefersHazardBuffer;
+    this.role = stats.role || 'standard';
+    this.empoweredAttacks = 0;
+    this.hazardTrail = false;
   }
 
   get isAlive() {
@@ -100,9 +116,13 @@ export class BossEnemy extends Enemy {
     this.maxHp = 120;
     this.baseDamage = 12;
     this.xpValue = 50;
+    this.goldValue = 25;
+    this.defense = 2;
     this.isBoss = true;
     this.phase = 1;
     this.baseMovMs = 700;
+    this.lavaAffinity = true;
+    this.hazardCosts = { lava: 1, ice: 1, spikes: 1 };
   }
 
   // Update boss phase based on HP thresholds
@@ -119,16 +139,23 @@ export class BossEnemy extends Enemy {
       switch (newPhase) {
         case 2: // Faster
           this.moveMs = Math.round(this.baseMovMs * 0.8);
-          this.name = 'The Ancient One (Enraged)';
+          this.baseDamage = 14;
+          this.isRanged = true;
+          this.attackRange = 3;
+          this.name = 'The Ancient One (Awakened)';
           break;
         case 3: // Stronger + faster
-          this.moveMs = Math.round(this.baseMovMs * 0.6);
+          this.moveMs = Math.round(this.baseMovMs * 0.65);
           this.baseDamage = 16;
+          this.hazardTrail = true;
           this.name = 'The Ancient One (Furious)';
           break;
         case 4: // Desperate - very fast, max damage
           this.moveMs = Math.round(this.baseMovMs * 0.4);
           this.baseDamage = 20;
+          this.isRanged = true;
+          this.attackRange = 4;
+          this.hazardTrail = true;
           this.name = 'The Ancient One (Desperate)';
           break;
       }
@@ -146,6 +173,8 @@ function promoteToMiniBoss(enemy) {
   enemy.maxHp = enemy.hp;
   enemy.baseDamage = Math.round(enemy.baseDamage * 1.5);
   enemy.xpValue = Math.round(enemy.xpValue * 2);
+  enemy.goldValue = Math.round(enemy.goldValue * 2);
+  enemy.defense += 1;
   // Distinct color per type
   const eliteColors = {
     skeleton: COLORS.ELITE_SKELETON,
@@ -161,10 +190,47 @@ export class Item {
   constructor(x, y, type, subtype, data) {
     this.x = x;
     this.y = y;
-    this.type = type;       // 'weapon', 'potion', 'scroll'
-    this.subtype = subtype; // weapon key or potion/scroll type
-    this.data = data;       // weapon stats or effect data
+    this.type = type;       // 'weapon', 'potion', 'scroll', 'armor', 'key', 'gold'
+    this.subtype = subtype; // item key within its category
+    this.data = data;       // item stats or effect data
     this.name = data.name;
+  }
+}
+
+function weightedPick(rng, entries) {
+  const total = entries.reduce((sum, [, weight]) => sum + weight, 0);
+  let roll = rng() * total;
+  for (const [value, weight] of entries) {
+    roll -= weight;
+    if (roll <= 0) return value;
+  }
+  return entries[entries.length - 1][0];
+}
+
+function getRoomEnemyWeights(roomType) {
+  switch (roomType) {
+    case 'guardpost':
+      return { skeleton: 4, goblin: 1, archer: 4, troll: 2 };
+    case 'vault':
+      return { skeleton: 2, goblin: 4, archer: 1, troll: 1 };
+    case 'exit':
+      return { skeleton: 3, goblin: 1, archer: 2, troll: 2 };
+    default:
+      return { skeleton: 3, goblin: 3, archer: 2, troll: 2 };
+  }
+}
+
+function chooseEnemyType(availableTypes, roomType, rng) {
+  const weights = getRoomEnemyWeights(roomType);
+  return weightedPick(rng, availableTypes.map(type => [type, weights[type] || 1]));
+}
+
+function getMiniBossBonus(roomType) {
+  switch (roomType) {
+    case 'guardpost': return 0.16;
+    case 'exit': return 0.08;
+    case 'vault': return -0.05;
+    default: return 0;
   }
 }
 
@@ -197,7 +263,7 @@ export function spawnEnemies(floor, entitySpawns, rooms, rng) {
       return true;
     });
 
-    type = availableTypes[Math.floor(rng() * availableTypes.length)];
+    type = chooseEnemyType(availableTypes, spawn.room?.type || 'normal', rng);
     if (type === 'troll') trollCount++;
     if (type === 'archer') archerCount++;
 
@@ -214,7 +280,7 @@ export function spawnEnemies(floor, entitySpawns, rooms, rng) {
     }
 
     // Promote to mini-boss based on floor config
-    const miniBossChance = config.miniBossChance || 0;
+    const miniBossChance = Math.max(0, (config.miniBossChance || 0) + getMiniBossBonus(spawn.room?.type || 'normal'));
     if (miniBossChance > 0 && rng() < miniBossChance) {
       promoteToMiniBoss(enemy);
     }
@@ -247,7 +313,59 @@ export function spawnEnemies(floor, entitySpawns, rooms, rng) {
 }
 
 // Spawn items for a floor
-export function spawnItems(floor, itemSpawns, rng) {
+function getRoomItemCategoryWeights(roomType) {
+  switch (roomType) {
+    case 'vault':
+      return [['weapon', 0.28], ['armor', 0.22], ['potion', 0.18], ['scroll', 0.12], ['gold', 0.20]];
+    case 'guardpost':
+      return [['weapon', 0.18], ['armor', 0.28], ['potion', 0.22], ['scroll', 0.12], ['gold', 0.20]];
+    case 'exit':
+      return [['weapon', 0.18], ['armor', 0.20], ['potion', 0.32], ['scroll', 0.18], ['gold', 0.12]];
+    default:
+      return [['weapon', 0.22], ['armor', 0.18], ['potion', 0.34], ['scroll', 0.14], ['gold', 0.12]];
+  }
+}
+
+function chooseGear(pool, roomType, rng) {
+  const rarePool = pool.filter(([, data]) => data.rare);
+  if (roomType === 'vault' && rarePool.length > 0 && rng() < 0.35) {
+    return rarePool[Math.floor(rng() * rarePool.length)];
+  }
+  if (roomType === 'guardpost' && rarePool.length > 0 && rng() < 0.15) {
+    return rarePool[Math.floor(rng() * rarePool.length)];
+  }
+  return pool[Math.floor(rng() * pool.length)];
+}
+
+function choosePotion(roomType, floor, rng) {
+  const pool = Object.entries(POTIONS).filter(([, potion]) => potion.minFloor <= floor);
+  let weights;
+  switch (roomType) {
+    case 'guardpost':
+      weights = pool.map(([key]) => [key, key === 'warding' ? 4 : key === 'quickstep' ? 2 : 3]);
+      break;
+    case 'vault':
+      weights = pool.map(([key]) => [key, key === 'quickstep' ? 3 : key === 'warding' ? 2 : 3]);
+      break;
+    default:
+      weights = pool.map(([key]) => [key, key === 'health' ? 5 : 2]);
+      break;
+  }
+  const choiceKey = weightedPick(rng, weights);
+  return [choiceKey, POTIONS[choiceKey]];
+}
+
+function createGoldItem(spawn, roomType, rng) {
+  const base = roomType === 'vault' ? 10 : roomType === 'guardpost' ? 7 : 5;
+  const variance = roomType === 'vault' ? 6 : 4;
+  const amount = base + Math.floor(rng() * variance);
+  return new Item(spawn.x, spawn.y, 'gold', 'coins', {
+    name: 'Gold Cache',
+    amount
+  });
+}
+
+export function spawnItems(floor, itemSpawns, rng, itemMultiplier = 1) {
   const config = FLOOR_CONFIG[floor];
   const items = [];
 
@@ -260,7 +378,7 @@ export function spawnItems(floor, itemSpawns, rng) {
     default: itemRatio = 0.5;
   }
 
-  const maxItems = Math.floor(itemSpawns.length * itemRatio);
+  const maxItems = Math.max(0, Math.floor(itemSpawns.length * itemRatio * itemMultiplier));
 
   // Shuffle spawns
   const shuffled = [...itemSpawns];
@@ -274,31 +392,31 @@ export function spawnItems(floor, itemSpawns, rng) {
     .filter(([key, w]) => key !== 'fists' && w.minFloor <= floor);
   const availableArmors = Object.entries(ARMORS)
     .filter(([key, a]) => a.minFloor <= floor);
+  const availableScrolls = Object.entries(SCROLLS)
+    .filter(([, scroll]) => scroll.minFloor <= floor);
 
   for (let i = 0; i < Math.min(maxItems, shuffled.length); i++) {
     const spawn = shuffled[i];
-    const roll = rng();
+    const roomType = spawn.room?.type || 'normal';
+    const category = weightedPick(rng, getRoomItemCategoryWeights(roomType));
 
-    if (roll < 0.45) {
-      // Health potion
-      items.push(new Item(spawn.x, spawn.y, 'potion', 'health', {
-        name: 'Health Potion',
-        healAmount: CONFIG.POTION_HEAL
-      }));
-    } else if (roll < 0.65 && availableWeapons.length > 0) {
-      // Weapon
-      const [key, weapon] = availableWeapons[Math.floor(rng() * availableWeapons.length)];
+    if (category === 'potion') {
+      const [key, potion] = choosePotion(roomType, floor, rng);
+      items.push(new Item(spawn.x, spawn.y, 'potion', key, { ...potion }));
+    } else if (category === 'weapon' && availableWeapons.length > 0) {
+      const [key, weapon] = chooseGear(availableWeapons, roomType, rng);
       items.push(new Item(spawn.x, spawn.y, 'weapon', key, { ...weapon }));
-    } else if (roll < 0.80 && availableArmors.length > 0) {
-      // Armor
-      const [key, armor] = availableArmors[Math.floor(rng() * availableArmors.length)];
+    } else if (category === 'armor' && availableArmors.length > 0) {
+      const [key, armor] = chooseGear(availableArmors, roomType, rng);
       items.push(new Item(spawn.x, spawn.y, 'armor', key, { ...armor }));
+    } else if (category === 'gold') {
+      items.push(createGoldItem(spawn, roomType, rng));
+    } else if (availableScrolls.length > 0) {
+      const [key, scroll] = availableScrolls[Math.floor(rng() * availableScrolls.length)];
+      items.push(new Item(spawn.x, spawn.y, 'scroll', key, { ...scroll }));
     } else {
-      // Scroll of Blinding
-      items.push(new Item(spawn.x, spawn.y, 'scroll', 'blinding', {
-        name: 'Scroll of Blinding',
-        duration: CONFIG.BLIND_DURATION
-      }));
+      const [key, potion] = choosePotion(roomType, floor, rng);
+      items.push(new Item(spawn.x, spawn.y, 'potion', key, { ...potion }));
     }
   }
 

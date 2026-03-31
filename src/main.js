@@ -5,9 +5,12 @@ import { Renderer } from './renderer.js';
 import { computeFOV, updateExplored, createExploredMap } from './fov.js';
 import { Player, Item, spawnEnemies, spawnItems, getItemAt, getEnemyAt, buildEnemySpatialGrid } from './entities.js';
 import { updateAllEnemies } from './ai.js';
-import { playerAttack, enemyAttack, pickupItem, generateLoot, applyBlinding } from './combat.js';
-import { MessageLog, drawHUD, drawMainMenu, drawHowToPlay, drawPauseMenu, drawGameOver, drawVictory, drawLevelTransition, drawStore } from './ui.js';
-import { playDescend, playHazard, playPlayerDeath, playArrowShoot, playBossReveal } from './audio.js';
+import { playerAttack, enemyAttack, pickupItem, generateLoot, applyBlinding, resolveEnemyDefeat, describeItem, recalculatePlayerDefense } from './combat.js';
+import { buildRoomLookup, getRoomBanner } from './rooms.js';
+import { createSanctuaryFeatures, getInteractableAt, getInteractableDescription, createInteractionMenu, applyInteraction } from './interactables.js';
+import { applyEnemyHazardStep } from './hazards.js';
+import { MessageLog, drawHUD, drawMainMenu, drawHowToPlay, drawPauseMenu, drawGameOver, drawVictory, drawLevelTransition, drawInteractionMenu, drawRoomBanner, getPauseMenuLayout, getInteractionMenuLayout } from './ui.js';
+import { playDescend, playHazard, playPlayerDeath, playArrowShoot, playBossReveal, toggleMute, isMuted } from './audio.js';
 
 // Canvas setup
 const canvas = document.getElementById('gameCanvas');
@@ -30,11 +33,13 @@ let floor = 1;
 let map = null;
 let rooms = null;
 let endRoom = null;
+let roomLookup = null;
 let explored = null;
 let visible = null;
 let player = null;
 let enemies = [];
 let items = [];
+let interactables = [];
 let messageLog = new MessageLog();
 let rng = null;
 
@@ -44,12 +49,14 @@ let lastDirectionKey = null;    // Most recently pressed direction
 let pendingAction = null;       // Non-movement action (e.g. 'f', ' ', '>')
 let pauseMenuSelection = 0;
 let pauseMenuHover = -1;        // Mouse hover index for pause menu
+let interactionMenu = null;
+let interactionSelection = 0;
+let interactionHover = -1;
 let showHowToPlay = false;
 let howToPlayScroll = 0;
 let gameStartTime = 0;
 let lastMoveProcessTime = 0;
-let mainMenuHover = '';         // 'start', 'help', 'store', or ''
-let showStore = false;
+let mainMenuHover = '';         // 'start' or 'help'
 let difficulty = 'normal';      // 'easy', 'normal', 'hard'
 let customSeed = null;          // null = random, number = fixed seed
 
@@ -64,8 +71,11 @@ let minimapEnlarged = false;
 // Item/enemy hover tooltip
 let hoveredItem = null;
 let hoveredEnemy = null;
+let hoveredFeature = null;
 let mouseScreenX = 0;
 let mouseScreenY = 0;
+let currentRoom = null;
+let activeRoomBanner = null;
 
 // Level transition
 let transitionProgress = 0;
@@ -125,6 +135,9 @@ function resumeGameplay() {
 }
 
 function returnToMainMenu() {
+  minimapEnlarged = false;
+  interactionMenu = null;
+  showHowToPlay = false;
   setStateWithCursor(STATE.MAIN_MENU);
 }
 
@@ -132,6 +145,20 @@ function openPauseMenu() {
   pauseMenuSelection = 0;
   pauseMenuHover = -1;
   setStateWithCursor(STATE.PAUSED);
+}
+
+function closeInteractionMenu() {
+  interactionMenu = null;
+  interactionSelection = 0;
+  interactionHover = -1;
+  resumeGameplay();
+}
+
+function openInteractionMenu(menu) {
+  interactionMenu = menu;
+  interactionSelection = 0;
+  interactionHover = -1;
+  setStateWithCursor(STATE.INTERACT_MENU);
 }
 
 function openHowToPlay() {
@@ -151,10 +178,6 @@ function getMainMenuHoverTarget(mx, my) {
     return 'start';
   }
 
-  if (isPointInRect(mx, my, cx - 100, cy + 185, 200, 38)) {
-    return 'store';
-  }
-
   const iconX = canvas.width - 55;
   const iconY = canvas.height - 50;
   if (Math.hypot(mx - iconX, my - iconY) < 24) {
@@ -165,18 +188,27 @@ function getMainMenuHoverTarget(mx, my) {
 }
 
 function getPauseButtonIndex(mx, my) {
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  const btnW = 200;
-  const btnH = 36;
+  const layout = getPauseMenuLayout(canvas);
 
-  for (let i = 0; i < 3; i++) {
-    const btnY = cy - 10 + i * 44;
-    if (isPointInRect(mx, my, cx - btnW / 2, btnY - btnH / 2, btnW, btnH)) {
+  for (let i = 0; i < 4; i++) {
+    const btnY = layout.btnYStart + i * 44;
+    if (isPointInRect(mx, my, layout.cx - layout.btnW / 2, btnY - layout.btnH / 2, layout.btnW, layout.btnH)) {
       return i;
     }
   }
 
+  return -1;
+}
+
+function getInteractionOptionIndex(mx, my) {
+  if (!interactionMenu) return -1;
+  const layout = getInteractionMenuLayout(canvas, interactionMenu.options.length);
+  for (let i = 0; i < interactionMenu.options.length; i++) {
+    const y = layout.optionY + i * (layout.optionH + layout.optionGap);
+    if (isPointInRect(mx, my, layout.optionX, y, layout.optionW, layout.optionH)) {
+      return i;
+    }
+  }
   return -1;
 }
 
@@ -185,10 +217,15 @@ function executePauseMenuOption(index) {
     case 0:
       resumeGameplay();
       break;
-    case 1:
+    case 1: {
+      const muted = toggleMute();
+      messageLog.add(muted ? 'Audio muted.' : 'Audio restored.');
+      break;
+    }
+    case 2:
       startNewGame();
       break;
-    case 2:
+    case 3:
       returnToMainMenu();
       break;
   }
@@ -259,21 +296,264 @@ function applyHazardDamage({
   return false;
 }
 
+function getFloorFeature(room) {
+  if (!room) return null;
+  return interactables.find(feature => feature.room === room) || null;
+}
+
+function announceRoomIfNeeded(nextRoom) {
+  if (nextRoom === currentRoom) return;
+
+  currentRoom = nextRoom;
+  if (!nextRoom) return;
+
+  const feature = getFloorFeature(nextRoom);
+  activeRoomBanner = getRoomBanner(nextRoom, feature && !feature.used ? feature : null);
+
+  if (!nextRoom.discovered) {
+    nextRoom.discovered = true;
+    const detail = feature && !feature.used ? feature.description : nextRoom.subtitle;
+    messageLog.add(`${nextRoom.title}: ${detail}`);
+  }
+}
+
+function refreshRoomContext() {
+  if (!roomLookup || !player) return;
+  announceRoomIfNeeded(roomLookup[player.y]?.[player.x] || null);
+}
+
+function getPlayerSpeedBonus() {
+  return (player.weapon.speedBonus || 0) +
+    (player.armor?.moveBonus || 0) +
+    (player.moveBonus || 0) +
+    (player.floorMoveBonus || 0);
+}
+
+function getPlayerMoveCooldown() {
+  return Math.max(
+    CONFIG.MIN_MOVE_COOLDOWN_MS,
+    Math.min(CONFIG.MAX_MOVE_COOLDOWN_MS, CONFIG.MOVE_COOLDOWN_MS - getPlayerSpeedBonus() * 8)
+  );
+}
+
+function handleEnemyDrop(enemy) {
+  const loot = generateLoot(enemy, floor, rng);
+  if (!loot) return;
+  items.push(loot);
+  messageLog.add(`The ${enemy.name} dropped ${loot.name}.`);
+}
+
+function handleAutomaticPickup() {
+  const item = getItemAt(items, player.x, player.y);
+  if (item && (item.type === 'key' || item.type === 'gold')) {
+    handlePickedUpItem(pickupItem(player, item, items, messageLog, renderer));
+  }
+}
+
+function applyBossHazardTrail(trail) {
+  if (!trail) return false;
+  const { x, y, tile } = trail;
+  if (x === player.x && y === player.y) return false;
+  if (getInteractableAt(interactables, x, y)) return false;
+  if (map[y][x] !== TILE.FLOOR && map[y][x] !== TILE.CORRIDOR) return false;
+  map[y][x] = tile;
+  renderer.invalidateMap();
+  return true;
+}
+
+function tryReachAttack(dx, dy) {
+  const reach = player.weapon.reach || 1;
+  if (reach <= 1 || (dx !== 0 && dy !== 0)) return false;
+
+  for (let step = 2; step <= reach; step++) {
+    const targetX = player.x + dx * step;
+    const targetY = player.y + dy * step;
+    if (targetX < 0 || targetX >= CONFIG.MAP_WIDTH || targetY < 0 || targetY >= CONFIG.MAP_HEIGHT) {
+      return false;
+    }
+
+    const betweenX = player.x + dx * (step - 1);
+    const betweenY = player.y + dy * (step - 1);
+    if (!isWalkable(map[betweenY][betweenX]) || getEnemyAt(enemies, betweenX, betweenY)) {
+      return false;
+    }
+
+    const targetEnemy = getEnemyAt(enemies, targetX, targetY);
+    if (targetEnemy) {
+      const killed = playerAttack(player, targetEnemy, rng, messageLog, renderer);
+      if (killed) handleEnemyDrop(targetEnemy);
+      return true;
+    }
+
+    if (!isWalkable(map[targetY][targetX])) {
+      return false;
+    }
+  }
+
+  return false;
+}
+
+function applyPlayerTileEffects(dx, dy) {
+  let slid = false;
+
+  while (true) {
+    const tile = map[player.y][player.x];
+    if (tile === TILE.LAVA) {
+      const damage = Math.max(1, 5 - (player.armor?.lavaWard ? 2 : 0));
+      const message = player.armor?.lavaWard
+        ? `Your armor blunts the lava, but you still burn. (-${damage} HP)`
+        : 'The lava burns you! (-5 HP)';
+      if (applyHazardDamage({
+        damage,
+        message,
+        effectColor: '#ff6600',
+        flashColor: '#ff3300',
+        flashDuration: 150,
+        shakeIntensity: 3,
+        hitFlash: 100,
+        deathReason: 'Burned to death by lava',
+      })) {
+        return true;
+      }
+      return false;
+    }
+
+    if (tile === TILE.SPIKE_TRAP) {
+      if (applyHazardDamage({
+        damage: 3,
+        message: 'Spike trap! (-3 HP)',
+        effectColor: '#aaaaaa',
+        shakeIntensity: 2,
+        hitFlash: 80,
+        deathReason: 'Impaled by spike trap',
+      })) {
+        return true;
+      }
+      return false;
+    }
+
+    if (tile === TILE.ICE && !slid) {
+      const slideX = player.x + dx;
+      const slideY = player.y + dy;
+      if (slideX >= 0 && slideX < CONFIG.MAP_WIDTH && slideY >= 0 && slideY < CONFIG.MAP_HEIGHT &&
+          isWalkable(map[slideY][slideX]) && !getEnemyAt(enemies, slideX, slideY)) {
+        player.x = slideX;
+        player.y = slideY;
+        slid = true;
+        messageLog.add('The ice carries you forward.');
+        continue;
+      }
+    }
+
+    return false;
+  }
+}
+
+function getContextPrompt() {
+  const feature = getInteractableAt(interactables, player.x, player.y);
+  if (feature) {
+    return `[F] ${feature.prompt}`;
+  }
+
+  const item = getItemAt(items, player.x, player.y);
+  if (item) {
+    if (item.type === 'key' || item.type === 'gold') {
+      return `${item.name} auto-collects`;
+    }
+    return `[F] ${item.name} - ${describeItem(item)}`;
+  }
+
+  if (map[player.y][player.x] === TILE.STAIRS_DOWN) {
+    if (keysCollected >= keysRequired) return '[Enter] Descend to the next floor';
+    return `Need ${keysRequired - keysCollected} more key${keysRequired - keysCollected === 1 ? '' : 's'} to descend`;
+  }
+
+  if (keysCollected < keysRequired) {
+    return `${keysRequired - keysCollected} key${keysRequired - keysCollected === 1 ? '' : 's'} still missing on this floor`;
+  }
+
+  return 'Explore for loot, sanctuaries, and a safe route forward';
+}
+
+function drawInfoTooltip(ctx, title, description, accent, sx, sy) {
+  ctx.font = 'bold 13px monospace';
+  const titleWidth = ctx.measureText(title).width;
+  ctx.font = '11px monospace';
+  const descWidth = ctx.measureText(description).width;
+  const tipW = Math.max(titleWidth, descWidth) + 20;
+  const tipH = 44;
+
+  let tx = sx - tipW / 2;
+  let ty = sy - tipH - 16;
+  tx = Math.max(4, Math.min(tx, canvas.width - tipW - 4));
+  ty = Math.max(4, ty);
+
+  ctx.fillStyle = 'rgba(10, 10, 24, 0.92)';
+  ctx.beginPath();
+  ctx.moveTo(tx + 4, ty);
+  ctx.lineTo(tx + tipW - 4, ty);
+  ctx.quadraticCurveTo(tx + tipW, ty, tx + tipW, ty + 4);
+  ctx.lineTo(tx + tipW, ty + tipH - 4);
+  ctx.quadraticCurveTo(tx + tipW, ty + tipH, tx + tipW - 4, ty + tipH);
+  ctx.lineTo(tx + 4, ty + tipH);
+  ctx.quadraticCurveTo(tx, ty + tipH, tx, ty + tipH - 4);
+  ctx.lineTo(tx, ty + 4);
+  ctx.quadraticCurveTo(tx, ty, tx + 4, ty);
+  ctx.fill();
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(title, tx + 10, ty + 18);
+  ctx.fillStyle = '#aaa';
+  ctx.font = '11px monospace';
+  ctx.fillText(description, tx + 10, ty + 34);
+}
+
+function openFeatureInteraction(feature) {
+  if (!feature || feature.used) return false;
+
+  if (feature.type === 'fountain') {
+    applyInteraction(feature, null, player, messageLog, renderer);
+    return true;
+  }
+
+  const menu = createInteractionMenu(feature, player);
+  if (!menu) return false;
+  openInteractionMenu(menu);
+  return true;
+}
+
+function commitInteractionSelection(index) {
+  if (!interactionMenu) return;
+  const option = interactionMenu.options[index];
+  if (!option || option.disabled) return;
+
+  const result = applyInteraction(interactionMenu.feature, option.id, player, messageLog, renderer);
+  if (result.refreshMenu) {
+    interactionMenu = createInteractionMenu(interactionMenu.feature, player);
+    interactionSelection = Math.min(interactionSelection, Math.max(0, interactionMenu.options.length - 1));
+  }
+  if (result.closeMenu) {
+    closeInteractionMenu();
+  }
+  recalculatePlayerDefense(player);
+}
+
 document.addEventListener('keydown', (e) => {
   if (GAME_KEYS.has(e.key)) e.preventDefault();
 
   const nk = normalizeKey(e.key);
 
   if (state === STATE.MAIN_MENU) {
-    if (showStore) {
-      if (e.key === 'Escape') showStore = false;
-      return;
-    }
     if (showHowToPlay) {
       if (e.key === 'Escape' || nk === '?' || nk === 'i') {
         showHowToPlay = false;
       } else if (e.key === 'ArrowDown' || nk === 's') {
-        howToPlayScroll = Math.min(howToPlayScroll + 40, 900);
+        howToPlayScroll = Math.min(howToPlayScroll + 40, 1400);
       } else if (e.key === 'ArrowUp' || nk === 'w') {
         howToPlayScroll = Math.max(howToPlayScroll - 40, 0);
       }
@@ -322,6 +602,11 @@ document.addEventListener('keydown', (e) => {
 
   if (state === STATE.PAUSED) {
     handlePauseInput(e.key);
+    return;
+  }
+
+  if (state === STATE.INTERACT_MENU) {
+    handleInteractionInput(e.key);
     return;
   }
 
@@ -391,10 +676,6 @@ canvas.addEventListener('click', (e) => {
   const my = e.clientY - rect.top;
 
   if (state === STATE.MAIN_MENU) {
-    if (showStore) {
-      showStore = false;
-      return;
-    }
     if (showHowToPlay) {
       showHowToPlay = false;
       return;
@@ -405,6 +686,11 @@ canvas.addEventListener('click', (e) => {
 
   if (state === STATE.PAUSED) {
     handlePauseClick(mx, my);
+    return;
+  }
+
+  if (state === STATE.INTERACT_MENU) {
+    handleInteractionClick(mx, my);
     return;
   }
 
@@ -435,9 +721,6 @@ function handleMainMenuClick(mx, my) {
     case 'start':
       startNewGame();
       return;
-    case 'store':
-      showStore = true;
-      return;
     case 'help':
       openHowToPlay();
       return;
@@ -451,6 +734,16 @@ function handlePauseClick(mx, my) {
   }
 }
 
+function handleInteractionClick(mx, my) {
+  const optionIndex = getInteractionOptionIndex(mx, my);
+  if (optionIndex === -1) {
+    closeInteractionMenu();
+    return;
+  }
+  interactionSelection = optionIndex;
+  commitInteractionSelection(optionIndex);
+}
+
 // ---- Mouse hover tracking ----
 canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
@@ -458,7 +751,7 @@ canvas.addEventListener('mousemove', (e) => {
   const my = e.clientY - rect.top;
 
   if (state === STATE.MAIN_MENU) {
-    if (showStore || showHowToPlay) {
+    if (showHowToPlay) {
       canvas.style.cursor = 'pointer';
       return;
     }
@@ -484,6 +777,19 @@ canvas.addEventListener('mousemove', (e) => {
     return;
   }
 
+  if (state === STATE.INTERACT_MENU) {
+    const optionIndex = getInteractionOptionIndex(mx, my);
+    if (optionIndex === -1) {
+      interactionHover = -1;
+      canvas.style.cursor = 'default';
+    } else {
+      interactionHover = optionIndex;
+      interactionSelection = optionIndex;
+      canvas.style.cursor = 'pointer';
+    }
+    return;
+  }
+
   if (state === STATE.GAME_OVER || state === STATE.VICTORY) {
     canvas.style.cursor = 'pointer';
     return;
@@ -497,6 +803,7 @@ canvas.addEventListener('mousemove', (e) => {
       canvas.style.cursor = 'pointer';
       hoveredItem = null;
       hoveredEnemy = null;
+      hoveredFeature = null;
       return;
     }
     const mmX = canvas.width - CONFIG.MINIMAP_WIDTH - 10;
@@ -506,6 +813,7 @@ canvas.addEventListener('mousemove', (e) => {
       canvas.style.cursor = 'pointer';
       hoveredItem = null;
       hoveredEnemy = null;
+      hoveredFeature = null;
     } else {
       canvas.style.cursor = 'none';
       // Check for item under mouse cursor (world coordinates)
@@ -514,10 +822,12 @@ canvas.addEventListener('mousemove', (e) => {
       const worldY = Math.floor((my - offset.y) / CONFIG.TILE_SIZE);
       hoveredItem = null;
       hoveredEnemy = null;
+      hoveredFeature = null;
       if (worldX >= 0 && worldX < CONFIG.MAP_WIDTH && worldY >= 0 && worldY < CONFIG.MAP_HEIGHT) {
         if (visible && visible[worldY][worldX]) {
           hoveredItem = getItemAt(items, worldX, worldY) || null;
           hoveredEnemy = getEnemyAt(enemies, worldX, worldY) || null;
+          hoveredFeature = getInteractableAt(interactables, worldX, worldY) || null;
         }
       }
     }
@@ -534,13 +844,36 @@ function handlePauseInput(key) {
     case 'ArrowDown':
     case 's':
     case 'S':
-      pauseMenuSelection = Math.min(2, pauseMenuSelection + 1);
+      pauseMenuSelection = Math.min(3, pauseMenuSelection + 1);
       break;
     case 'Enter':
       executePauseMenuOption(pauseMenuSelection);
       break;
     case 'Escape':
       resumeGameplay();
+      break;
+  }
+}
+
+function handleInteractionInput(key) {
+  switch (key) {
+    case 'ArrowUp':
+    case 'w':
+    case 'W':
+      interactionSelection = Math.max(0, interactionSelection - 1);
+      break;
+    case 'ArrowDown':
+    case 's':
+    case 'S':
+      interactionSelection = Math.min(interactionMenu.options.length - 1, interactionSelection + 1);
+      break;
+    case 'Enter':
+    case 'f':
+    case 'F':
+      commitInteractionSelection(interactionSelection);
+      break;
+    case 'Escape':
+      closeInteractionMenu();
       break;
   }
 }
@@ -565,8 +898,13 @@ function startNewGame() {
   heldKeys.clear();
   lastDirectionKey = null;
   pendingAction = null;
-  showStore = false;
   showHowToPlay = false;
+  interactionMenu = null;
+  hoveredItem = null;
+  hoveredEnemy = null;
+  hoveredFeature = null;
+  currentRoom = null;
+  activeRoomBanner = null;
   messageLog = new MessageLog();
   initFloor();
   gameStartTime = Date.now();
@@ -581,6 +919,8 @@ function initFloor() {
   map = dungeon.map;
   rooms = dungeon.rooms;
   endRoom = dungeon.endRoom;
+  roomLookup = buildRoomLookup(rooms);
+  interactables = createSanctuaryFeatures(rooms, floor, rng);
 
   // Create or reset player position
   if (!player || floor === 1) {
@@ -591,7 +931,11 @@ function initFloor() {
     player.y = dungeon.playerStart.y;
     player.renderX = player.x;
     player.renderY = player.y;
+    player.floorMoveBonus = 0;
   }
+  recalculatePlayerDefense(player);
+  currentRoom = null;
+  activeRoomBanner = null;
 
   // Spawn entities with difficulty scaling
   const diff = DIFFICULTY[difficulty];
@@ -603,7 +947,7 @@ function initFloor() {
     enemy.baseDamage = Math.round(enemy.baseDamage * diff.enemyDmgMult);
     enemy.xpValue = Math.round(enemy.xpValue * diff.xpMult);
   }
-  items = spawnItems(floor, dungeon.itemSpawns, rng);
+  items = spawnItems(floor, dungeon.itemSpawns, rng, diff.itemMult);
 
   // Key progression system
   const floorConfig = FLOOR_CONFIG[floor];
@@ -630,6 +974,8 @@ function initFloor() {
   // Initialize FOV
   explored = createExploredMap();
   refreshVisibility(true);
+  refreshRoomContext();
+  handleAutomaticPickup();
 
   // Initialize renderer
   renderer.generateGrit(mulberry32(seed + floor * 2000));
@@ -642,6 +988,9 @@ function initFloor() {
   if (keysRequired > 0) {
     messageLog.add(`Find ${keysRequired} key${keysRequired > 1 ? 's' : ''} to unlock the stairs.`);
   }
+  if (interactables.some(feature => feature.type === 'merchant')) {
+    messageLog.add('A Quartermaster has reached this floor. Gold may buy a build pivot.');
+  }
   if (floor === CONFIG.MAX_FLOORS) {
     messageLog.add('You sense a powerful presence nearby...');
   }
@@ -651,8 +1000,8 @@ function initFloor() {
 function processInput() {
   if (!player.isAlive) return;
 
-  let dx = 0, dy = 0;
-  let moved = false;
+  let dx = 0;
+  let dy = 0;
   let acted = false;
 
   // Check for non-movement action first (single-fire from keydown)
@@ -669,7 +1018,7 @@ function processInput() {
   // Check for held movement direction (continuous movement)
   if (!acted && lastDirectionKey) {
     const now = performance.now();
-    if (now - lastMoveProcessTime < CONFIG.MOVE_COOLDOWN_MS) return;
+    if (now - lastMoveProcessTime < getPlayerMoveCooldown()) return;
 
     const dir = getDirection(lastDirectionKey);
     if (dir) {
@@ -691,78 +1040,37 @@ function processInput() {
       if (!cornerBlocked) {
         const targetEnemy = getEnemyAt(enemies, newX, newY);
         if (targetEnemy) {
-          playerAttack(player, targetEnemy, rng, messageLog, renderer);
+          const killed = playerAttack(player, targetEnemy, rng, messageLog, renderer);
           acted = true;
-
-          if (!targetEnemy.isAlive) {
-            const loot = generateLoot(targetEnemy, floor, rng);
-            if (loot) {
-              items.push(loot);
-              messageLog.add(`The ${targetEnemy.name} dropped a ${loot.name}!`);
-            }
-          }
+          if (killed) handleEnemyDrop(targetEnemy);
+        } else if (tryReachAttack(dx, dy)) {
+          acted = true;
         } else if (isWalkable(map[newY][newX])) {
           player.x = newX;
           player.y = newY;
-          moved = true;
           acted = true;
 
-          // Apply hazard effects
-          const tile = map[player.y][player.x];
-          if (tile === TILE.LAVA) {
-            if (applyHazardDamage({
-              damage: 5,
-              message: 'The lava burns you! (-5 HP)',
-              effectColor: '#ff6600',
-              flashColor: '#ff3300',
-              flashDuration: 150,
-              shakeIntensity: 3,
-              hitFlash: 100,
-              deathReason: 'Burned to death by lava',
-            })) {
-              return;
-            }
-          } else if (tile === TILE.ICE) {
-            // Slide one extra tile in the same direction (if walkable)
-            const slideX = player.x + dx;
-            const slideY = player.y + dy;
-            if (slideX >= 0 && slideX < CONFIG.MAP_WIDTH && slideY >= 0 && slideY < CONFIG.MAP_HEIGHT &&
-                isWalkable(map[slideY][slideX]) && !getEnemyAt(enemies, slideX, slideY)) {
-              player.x = slideX;
-              player.y = slideY;
-            }
-          } else if (tile === TILE.SPIKE_TRAP) {
-            if (applyHazardDamage({
-              damage: 3,
-              message: 'Spike trap! (-3 HP)',
-              effectColor: '#aaaaaa',
-              shakeIntensity: 2,
-              hitFlash: 80,
-              deathReason: 'Impaled by spike trap',
-            })) {
-              return;
-            }
+          if (applyPlayerTileEffects(dx, dy)) {
+            return;
           }
-
-          // Auto-pickup keys only (potions require manual pickup)
-          const groundItem = getItemAt(items, player.x, player.y);
-          if (groundItem && groundItem.type === 'key') {
-            handlePickedUpItem(pickupItem(player, groundItem, items, messageLog, renderer));
-          }
+          handleAutomaticPickup();
+          refreshVisibility(true);
+          refreshRoomContext();
         }
       }
     }
   }
-
-  if (moved) {
-    refreshVisibility(true);
-  }
-
 }
 
 
 // Try to pick up item at player position
 function tryPickup() {
+  const feature = getInteractableAt(interactables, player.x, player.y);
+  if (feature) {
+    openFeatureInteraction(feature);
+    return;
+  }
+
   const item = getItemAt(items, player.x, player.y);
   if (item) {
     handlePickedUpItem(pickupItem(player, item, items, messageLog, renderer));
@@ -806,7 +1114,7 @@ function updateEnemiesRealTime() {
   const now = performance.now();
   const actions = updateAllEnemies(enemies, player, map, now, rng);
 
-  let needFOVUpdate = false;
+  let gridNeedsRebuild = false;
   for (const action of actions) {
     if ((action.type === 'attack' || action.type === 'ranged_attack') && action.enemy) {
       if (action.type === 'ranged_attack') {
@@ -821,13 +1129,48 @@ function updateEnemiesRealTime() {
       }
     }
     if (action.type === 'move') {
-      needFOVUpdate = true;
+      gridNeedsRebuild = true;
+      applyBossHazardTrail(action.leaveHazard);
+      const hazardResult = applyEnemyHazardStep(
+        action.enemy,
+        map,
+        action.fromX,
+        action.fromY,
+        enemies,
+        player,
+        visible,
+        messageLog,
+        renderer
+      );
+
+      const followUpHazard = hazardResult.moved && !hazardResult.died
+        ? applyEnemyHazardStep(
+            action.enemy,
+            map,
+            action.enemy.x,
+            action.enemy.y,
+            enemies,
+            player,
+            visible,
+            messageLog,
+            renderer
+          )
+        : { died: false, moved: false };
+
+      if (hazardResult.moved || hazardResult.died || followUpHazard.moved || followUpHazard.died) {
+        gridNeedsRebuild = true;
+      }
+
+      const fatalHazard = followUpHazard.died ? followUpHazard : hazardResult;
+      if (fatalHazard.died) {
+        resolveEnemyDefeat(player, action.enemy, messageLog, renderer, { cause: fatalHazard.cause });
+        handleEnemyDrop(action.enemy);
+      }
     }
   }
 
-  // Update FOV if any enemy moved (might have entered/exited visible area)
-  if (needFOVUpdate) {
-    refreshVisibility();
+  if (gridNeedsRebuild) {
+    buildEnemySpatialGrid(enemies);
   }
 }
 
@@ -859,74 +1202,16 @@ function saveHighScores() {
 }
 
 // ---- Item tooltip ----
-function getItemDescription(item) {
-  switch (item.type) {
-    case 'potion': return `Restores ${item.data.healAmount} HP`;
-    case 'weapon': {
-      let desc = `${item.data.minDamage}-${item.data.maxDamage} damage`;
-      if (item.data.cursed) desc += ` (cursed: -${item.data.hpDrain} HP/hit)`;
-      return desc;
-    }
-    case 'armor': return `+${item.data.defense} defense`;
-    case 'scroll': return `Blinds nearest enemy`;
-    case 'key': return `Unlocks the stairs`;
-    default: return '';
-  }
-}
-
 function drawItemTooltip(ctx, item, sx, sy) {
-  const name = item.name;
-  const desc = getItemDescription(item);
-
-  ctx.font = 'bold 13px monospace';
-  const nameWidth = ctx.measureText(name).width;
-  ctx.font = '11px monospace';
-  const descWidth = ctx.measureText(desc).width;
-  const textWidth = Math.max(nameWidth, descWidth);
-
-  const padX = 10;
-  const padY = 6;
-  const tipW = textWidth + padX * 2;
-  const tipH = 38 + padY;
-  // Position above cursor, clamp to screen
-  let tx = sx - tipW / 2;
-  let ty = sy - tipH - 16;
-  tx = Math.max(4, Math.min(tx, canvas.width - tipW - 4));
-  ty = Math.max(4, ty);
-
-  // Background
-  ctx.fillStyle = 'rgba(10, 10, 24, 0.92)';
-  ctx.beginPath();
-  ctx.moveTo(tx + 4, ty);
-  ctx.lineTo(tx + tipW - 4, ty);
-  ctx.quadraticCurveTo(tx + tipW, ty, tx + tipW, ty + 4);
-  ctx.lineTo(tx + tipW, ty + tipH - 4);
-  ctx.quadraticCurveTo(tx + tipW, ty + tipH, tx + tipW - 4, ty + tipH);
-  ctx.lineTo(tx + 4, ty + tipH);
-  ctx.quadraticCurveTo(tx, ty + tipH, tx, ty + tipH - 4);
-  ctx.lineTo(tx, ty + 4);
-  ctx.quadraticCurveTo(tx, ty, tx + 4, ty);
-  ctx.fill();
-
-  // Border
   const borderColors = {
     potion: COLORS.ITEM_POTION, weapon: COLORS.ITEM_WEAPON,
-    scroll: COLORS.ITEM_SCROLL, armor: COLORS.ITEM_ARMOR, key: '#ffd700'
+    scroll: COLORS.ITEM_SCROLL, armor: COLORS.ITEM_ARMOR, key: '#ffd700', gold: COLORS.ITEM_GOLD
   };
-  ctx.strokeStyle = borderColors[item.type] || '#666';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  drawInfoTooltip(ctx, item.name, describeItem(item), borderColors[item.type] || '#666', sx, sy);
+}
 
-  // Name
-  ctx.fillStyle = '#fff';
-  ctx.font = 'bold 13px monospace';
-  ctx.textAlign = 'left';
-  ctx.fillText(name, tx + padX, ty + padY + 12);
-
-  // Description
-  ctx.fillStyle = '#aaa';
-  ctx.font = '11px monospace';
-  ctx.fillText(desc, tx + padX, ty + padY + 28);
+function drawFeatureTooltip(ctx, feature, sx, sy) {
+  drawInfoTooltip(ctx, feature.name, getInteractableDescription(feature), feature.color, sx, sy);
 }
 
 // ---- Enemy tooltip ----
@@ -997,6 +1282,48 @@ function drawEnemyTooltip(ctx, enemy, sx, sy) {
   }
 }
 
+function drawGameplayFrame(deltaTime, simulate = false) {
+  if (simulate) {
+    buildEnemySpatialGrid(enemies);
+    processInput();
+    if (state === STATE.PLAYING) {
+      updateEnemiesRealTime();
+    }
+  }
+
+  renderer.draw({
+    map,
+    visible,
+    explored,
+    player,
+    enemies,
+    items,
+    interactables,
+    roomLookup,
+    endRoom,
+    deltaTime: simulate ? deltaTime : 0,
+    gameStartTime,
+    keysCollected,
+    keysRequired
+  });
+
+  if (renderer.bossRevealed && !bossRevealTriggered) {
+    bossRevealTriggered = true;
+    playBossReveal();
+    messageLog.add('The Ancient One emerges from the darkness!');
+  }
+
+  drawHUD(ctx, canvas, player, floor, messageLog, keysCollected, keysRequired, {
+    currentRoom,
+    promptText: getContextPrompt(),
+    audioMuted: isMuted()
+  });
+
+  if (activeRoomBanner && activeRoomBanner.until > Date.now()) {
+    drawRoomBanner(ctx, canvas, activeRoomBanner);
+  }
+}
+
 // ---- Game loop ----
 let lastFrameTime = 0;
 
@@ -1007,39 +1334,20 @@ function gameLoop(timestamp) {
   switch (state) {
     case STATE.MAIN_MENU:
       drawMainMenu(ctx, canvas, highScores, mainMenuHover, difficulty, customSeed);
-      if (showStore) {
-        drawStore(ctx, canvas);
-      } else if (showHowToPlay) {
+      if (showHowToPlay) {
         drawHowToPlay(ctx, canvas, howToPlayScroll);
       }
       break;
 
     case STATE.PLAYING:
-      buildEnemySpatialGrid(enemies);
-      processInput();
-      updateEnemiesRealTime();
-
-      // Draw game
-      renderer.draw({
-        map, visible, explored, player, enemies, items,
-        endRoom, deltaTime, gameStartTime,
-        keysCollected, keysRequired
-      });
-
-      // Boss reveal sound
-      if (renderer.bossRevealed && !bossRevealTriggered) {
-        bossRevealTriggered = true;
-        playBossReveal();
-        messageLog.add('The Ancient One emerges from the darkness!');
-      }
-
-      // Draw HUD on top
-      drawHUD(ctx, canvas, player, floor, messageLog, keysCollected, keysRequired);
+      drawGameplayFrame(deltaTime, true);
 
       // Draw hover tooltips
       if (!minimapEnlarged) {
         if (hoveredEnemy) {
           drawEnemyTooltip(ctx, hoveredEnemy, mouseScreenX, mouseScreenY);
+        } else if (hoveredFeature) {
+          drawFeatureTooltip(ctx, hoveredFeature, mouseScreenX, mouseScreenY);
         } else if (hoveredItem) {
           drawItemTooltip(ctx, hoveredItem, mouseScreenX, mouseScreenY);
         }
@@ -1047,19 +1355,18 @@ function gameLoop(timestamp) {
 
       // Draw enlarged minimap overlay
       if (minimapEnlarged) {
-        renderer.drawMinimapOverlay(ctx, map, visible, explored, player, enemies, items);
+        renderer.drawMinimapOverlay(ctx, map, visible, explored, player, enemies, items, interactables, roomLookup);
       }
       break;
 
     case STATE.PAUSED:
-      // Draw game underneath (frozen)
-      renderer.draw({
-        map, visible, explored, player, enemies, items,
-        endRoom, deltaTime: 0, gameStartTime,
-        keysCollected, keysRequired
-      });
-      drawHUD(ctx, canvas, player, floor, messageLog, keysCollected, keysRequired);
-      drawPauseMenu(ctx, canvas, pauseMenuSelection, pauseMenuHover);
+      drawGameplayFrame(deltaTime, false);
+      drawPauseMenu(ctx, canvas, pauseMenuSelection, pauseMenuHover, isMuted());
+      break;
+
+    case STATE.INTERACT_MENU:
+      drawGameplayFrame(deltaTime, false);
+      drawInteractionMenu(ctx, canvas, interactionMenu, interactionSelection, interactionHover);
       break;
 
     case STATE.LEVEL_TRANSITION:
@@ -1071,10 +1378,7 @@ function gameLoop(timestamp) {
       } else {
         // Draw current game state underneath
         if (map) {
-          renderer.draw({
-            map, visible, explored, player, enemies, items,
-            endRoom, deltaTime: 0
-          });
+          drawGameplayFrame(deltaTime, false);
         }
         drawLevelTransition(ctx, canvas, floor, transitionProgress);
       }
@@ -1083,26 +1387,88 @@ function gameLoop(timestamp) {
     case STATE.GAME_OVER:
       // Draw game underneath (frozen)
       if (map) {
-        renderer.draw({
-          map, visible, explored, player, enemies, items,
-          endRoom, deltaTime: 0
-        });
+        drawGameplayFrame(deltaTime, false);
       }
       drawGameOver(ctx, canvas, player, floor, seed);
       break;
 
     case STATE.VICTORY:
       if (map) {
-        renderer.draw({
-          map, visible, explored, player, enemies, items,
-          endRoom, deltaTime: 0
-        });
+        drawGameplayFrame(deltaTime, false);
       }
       drawVictory(ctx, canvas, player, seed);
       break;
   }
 
   requestAnimationFrame(gameLoop);
+}
+
+if (typeof window !== 'undefined') {
+  window.__dungeonCrawlerDebug = {
+    getState() {
+      return {
+        state,
+        seed,
+        floor,
+        difficulty,
+        keysCollected,
+        keysRequired,
+        currentRoom: currentRoom ? {
+          type: currentRoom.type,
+          title: currentRoom.title,
+          subtitle: currentRoom.subtitle
+        } : null,
+        roomBanner: activeRoomBanner,
+        player: player ? {
+          x: player.x,
+          y: player.y,
+          hp: player.hp,
+          maxHp: player.maxHp,
+          level: player.level,
+          xp: player.xp,
+          strength: player.strength,
+          defense: player.defense,
+          gold: player.gold,
+          wardCharges: player.wardCharges,
+          weapon: player.weapon,
+          armor: player.armor,
+          floorMoveBonus: player.floorMoveBonus,
+          moveBonus: player.moveBonus
+        } : null,
+        tileAtPlayer: player ? map?.[player.y]?.[player.x] ?? null : null,
+        enemies: enemies.filter(enemy => enemy.isAlive).map(enemy => ({
+          name: enemy.name,
+          type: enemy.type,
+          x: enemy.x,
+          y: enemy.y,
+          hp: enemy.hp,
+          maxHp: enemy.maxHp,
+          state: enemy.state,
+          isBoss: !!enemy.isBoss,
+          isMiniBoss: !!enemy.isMiniBoss
+        })),
+        items: items.map(item => ({
+          name: item.name,
+          type: item.type,
+          subtype: item.subtype,
+          x: item.x,
+          y: item.y
+        })),
+        interactables: interactables.map(feature => ({
+          name: feature.name,
+          type: feature.type,
+          x: feature.x,
+          y: feature.y,
+          used: feature.used
+        })),
+        recentMessages: messageLog.getRecent().map(entry => entry.text),
+        allMessages: messageLog.messages.map(entry => entry.text),
+        showHowToPlay,
+        minimapEnlarged,
+        muted: isMuted()
+      };
+    }
+  };
 }
 
 // Start the game loop

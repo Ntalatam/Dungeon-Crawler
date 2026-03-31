@@ -26,15 +26,25 @@ export class MessageLog {
 }
 
 // Draw the in-game HUD
-export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 0, keysRequired = 0) {
+export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 0, keysRequired = 0, context = {}) {
   const hudH = CONFIG.HUD_HEIGHT;
   const hudY = canvas.height - hudH;
+  const padding = 15;
+  const barWidth = 180;
+  const barHeight = 15;
+  const now = Date.now();
+  const hpRatio = player.hp / player.maxHp;
+  const recentlyDamaged = player.lastDamageTime && (now - player.lastDamageTime < 400);
+  const lowHealth = player.hp > 0 && player.hp < 25;
+  const roomName = context.currentRoom?.title || 'Corridor';
+  const roomAccent = context.currentRoom?.accent || '#777';
+  const promptText = context.promptText || '[F] Use item here';
+  const speedBonus = (player.weapon.speedBonus || 0) + (player.armor?.moveBonus || 0) +
+    (player.moveBonus || 0) + (player.floorMoveBonus || 0);
 
-  // HUD background
   ctx.fillStyle = COLORS.HUD_BG;
   ctx.fillRect(0, hudY, canvas.width, hudH);
 
-  // Separator line
   ctx.strokeStyle = '#333';
   ctx.lineWidth = 1;
   ctx.beginPath();
@@ -42,188 +52,151 @@ export function drawHUD(ctx, canvas, player, floor, messageLog, keysCollected = 
   ctx.lineTo(canvas.width, hudY);
   ctx.stroke();
 
-  const padding = 15;
-  const barHeight = 16;
-  const barWidth = 180;
-
-  // HP Bar with damage feedback and low-health warning
   const hpX = padding;
-  const hpY = hudY + 12;
-  const hpRatio = player.hp / player.maxHp;
-  const now = Date.now();
-  const recentlyDamaged = player.lastDamageTime && (now - player.lastDamageTime < 400);
-  const lowHealth = player.hp > 0 && player.hp < 25;
+  const hpY = hudY + 14;
+  const hpBarX = hpX + 28;
+  const hpBarY = hpY - 11;
 
   ctx.fillStyle = COLORS.HUD_TEXT;
   ctx.font = '12px monospace';
   ctx.textAlign = 'left';
-  ctx.fillText('HP', hpX, hpY - 2);
+  ctx.fillText('HP', hpX, hpY - 1);
 
-  // Bar background
-  const barStartX = hpX + 25;
-  const barStartY = hpY - 12;
-
-  // Low-health glow effect
   if (lowHealth) {
     ctx.save();
     const pulse = 0.3 + 0.4 * Math.sin(now / 200);
     ctx.shadowColor = '#e63946';
     ctx.shadowBlur = 12 + pulse * 8;
-    ctx.fillStyle = `rgba(230, 57, 70, ${0.15 + pulse * 0.15})`;
-    ctx.fillRect(barStartX - 3, barStartY - 3, barWidth + 6, barHeight + 6);
+    ctx.fillStyle = `rgba(230, 57, 70, ${0.14 + pulse * 0.16})`;
+    ctx.fillRect(hpBarX - 3, hpBarY - 3, barWidth + 6, barHeight + 6);
     ctx.restore();
   }
 
-  // Damage flash glow
   if (recentlyDamaged) {
     ctx.save();
     const flashProgress = (now - player.lastDamageTime) / 400;
     const flashAlpha = 0.6 * (1 - flashProgress);
     ctx.shadowColor = '#ff0000';
-    ctx.shadowBlur = 15;
+    ctx.shadowBlur = 14;
     ctx.fillStyle = `rgba(255, 0, 0, ${flashAlpha})`;
-    ctx.fillRect(barStartX - 2, barStartY - 2, barWidth + 4, barHeight + 4);
+    ctx.fillRect(hpBarX - 2, hpBarY - 2, barWidth + 4, barHeight + 4);
     ctx.restore();
   }
 
   ctx.fillStyle = COLORS.HP_BAR_BG;
-  ctx.fillRect(barStartX, barStartY, barWidth, barHeight);
-  ctx.fillStyle = lowHealth ? (Math.sin(now / 150) > 0 ? '#ff2222' : COLORS.HP_BAR) : COLORS.HP_BAR;
-  ctx.fillRect(barStartX, barStartY, barWidth * hpRatio, barHeight);
+  ctx.fillRect(hpBarX, hpBarY, barWidth, barHeight);
+  ctx.fillStyle = lowHealth && Math.sin(now / 150) > 0 ? '#ff2222' : COLORS.HP_BAR;
+  ctx.fillRect(hpBarX, hpBarY, barWidth * hpRatio, barHeight);
 
-  // Damage flash: bright white overlay on bar
   if (recentlyDamaged) {
     const flashProgress = (now - player.lastDamageTime) / 400;
-    ctx.fillStyle = `rgba(255, 255, 255, ${0.4 * (1 - flashProgress)})`;
-    ctx.fillRect(barStartX, barStartY, barWidth * hpRatio, barHeight);
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.35 * (1 - flashProgress)})`;
+    ctx.fillRect(hpBarX, hpBarY, barWidth * hpRatio, barHeight);
   }
 
   ctx.fillStyle = COLORS.HUD_TEXT;
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(`${player.hp}/${player.maxHp}`, barStartX + barWidth / 2, hpY);
+  ctx.fillText(`${player.hp}/${player.maxHp}`, hpBarX + barWidth / 2, hpY);
 
-  // XP Bar
-  const xpX = padding;
-  const xpY = hudY + 38;
-
+  const xpY = hudY + 39;
   ctx.fillStyle = COLORS.HUD_TEXT;
   ctx.font = '12px monospace';
   ctx.textAlign = 'left';
-  ctx.fillText('XP', xpX, xpY - 2);
-
+  ctx.fillText('XP', hpX, xpY - 1);
   ctx.fillStyle = COLORS.XP_BAR_BG;
-  ctx.fillRect(xpX + 25, xpY - 12, barWidth, barHeight);
+  ctx.fillRect(hpBarX, xpY - 11, barWidth, barHeight);
   ctx.fillStyle = COLORS.XP_BAR;
-  ctx.fillRect(xpX + 25, xpY - 12, barWidth * player.xpProgress, barHeight);
-
+  ctx.fillRect(hpBarX, xpY - 11, barWidth * player.xpProgress, barHeight);
   ctx.fillStyle = '#000';
   ctx.font = 'bold 11px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(`Lv ${player.level}`, xpX + 25 + barWidth / 2, xpY);
+  ctx.fillText(`Lv ${player.level}`, hpBarX + barWidth / 2, xpY);
 
-  // Floor indicator
-  const floorX = hpX + barWidth + 50;
+  const centerX = hpBarX + barWidth + 44;
+  ctx.textAlign = 'left';
   ctx.fillStyle = COLORS.HUD_TEXT;
   ctx.font = 'bold 16px monospace';
-  ctx.textAlign = 'left';
-  ctx.fillText(`Floor ${floor}`, floorX, hudY + 22);
+  ctx.fillText(`Floor ${floor}`, centerX, hudY + 20);
+  ctx.fillStyle = roomAccent;
+  ctx.font = 'bold 13px monospace';
+  ctx.fillText(roomName, centerX + 90, hudY + 20);
 
-  // Weapon (cursed weapons shown in purple)
-  ctx.font = '13px monospace';
   ctx.fillStyle = player.weapon.cursed ? '#8b00ff' : COLORS.ITEM_WEAPON;
-  ctx.fillText(`⚔ ${player.weapon.name}`, floorX, hudY + 42);
+  ctx.font = '13px monospace';
+  ctx.fillText(player.weapon.name, centerX, hudY + 38);
+  ctx.fillStyle = player.armor ? COLORS.ITEM_ARMOR : '#666';
+  ctx.fillText(player.armor ? player.armor.name : 'No armor', centerX + 145, hudY + 38);
 
-  // Damage range with average
+  const weaponNotes = [];
+  if (player.weapon.reach > 1) weaponNotes.push(`reach ${player.weapon.reach}`);
+  if (player.weapon.hitBonus) weaponNotes.push(`+${Math.round(player.weapon.hitBonus * 100)}% hit`);
+  if (player.weapon.armorPierce) weaponNotes.push(`pierce ${player.weapon.armorPierce}`);
   const avgDmg = ((player.weapon.minDamage + player.weapon.maxDamage) / 2).toFixed(1);
   ctx.fillStyle = '#888';
   ctx.font = '11px monospace';
-  ctx.fillText(`(${player.weapon.minDamage}-${player.weapon.maxDamage} dmg, avg ${avgDmg})`, floorX + 120, hudY + 42);
+  ctx.fillText(
+    `${player.weapon.minDamage}-${player.weapon.maxDamage} dmg (avg ${avgDmg})${weaponNotes.length ? `, ${weaponNotes.join(', ')}` : ''}`,
+    centerX,
+    hudY + 53
+  );
 
-  // Stats
-  const statsX = floorX + 230;
-  ctx.fillStyle = COLORS.HUD_TEXT;
+  const statsX = centerX + 330;
+  const statGap = 70;
+  const stats = [
+    { label: 'STR', value: player.strength, color: COLORS.HUD_TEXT },
+    { label: 'DEF', value: player.defense, color: COLORS.ITEM_ARMOR },
+    { label: 'WARD', value: player.wardCharges, color: COLORS.ITEM_WARDING },
+    { label: 'GOLD', value: player.gold, color: COLORS.ITEM_GOLD },
+    { label: 'SPD', value: `${speedBonus >= 0 ? '+' : ''}${speedBonus}`, color: COLORS.ITEM_SWIFT },
+    { label: 'KILL', value: player.kills, color: COLORS.HUD_TEXT }
+  ];
+
   ctx.font = '12px monospace';
-  ctx.fillText(`STR: ${player.strength}`, statsX, hudY + 16);
-  ctx.fillStyle = COLORS.ITEM_ARMOR;
-  ctx.fillText(`DEF: ${player.defense}`, statsX, hudY + 32);
-  ctx.fillStyle = COLORS.HUD_TEXT;
-  ctx.fillText(`Kills: ${player.kills}`, statsX, hudY + 48);
+  stats.forEach((stat, index) => {
+    const x = statsX + (index % 3) * statGap;
+    const y = hudY + 16 + Math.floor(index / 3) * 18;
+    ctx.fillStyle = stat.color;
+    ctx.fillText(`${stat.label}: ${stat.value}`, x, y);
+  });
 
-  // Key counter (next to floor)
   if (keysRequired > 0) {
-    const keyX = floorX + 120;
+    const keyX = statsX + statGap * 3 + 12;
     ctx.fillStyle = keysCollected >= keysRequired ? '#06d6a0' : '#ffd700';
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'left';
-    // Draw small key icon
-    ctx.beginPath();
-    ctx.arc(keyX + 4, hudY + 16, 3, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillRect(keyX + 2, hudY + 19, 3, 5);
-    ctx.fillText(` ${keysCollected}/${keysRequired}`, keyX + 10, hudY + 22);
+    ctx.font = 'bold 13px monospace';
+    ctx.fillText(`KEYS ${keysCollected}/${keysRequired}`, keyX, hudY + 16);
     ctx.fillStyle = '#888';
     ctx.font = '11px monospace';
-    ctx.fillText(keysCollected >= keysRequired ? 'Stairs open' : 'Keys needed', keyX, hudY + 38);
+    ctx.fillText(keysCollected >= keysRequired ? 'Stairs unlocked' : 'Seal remains on the stairs', keyX, hudY + 31);
   }
 
-  // Consumable guide (right side)
-  const guideX = canvas.width - 220;
+  const promptX = canvas.width - 310;
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  ctx.fillRect(promptX - 10, hudY + 8, 300, 30);
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.strokeRect(promptX - 10, hudY + 8, 300, 30);
   ctx.textAlign = 'left';
+  ctx.fillStyle = COLORS.PLAYER;
+  ctx.font = 'bold 11px monospace';
+  ctx.fillText('ACTION', promptX, hudY + 20);
+  ctx.fillStyle = '#d0d0d0';
   ctx.font = '11px monospace';
-  // Potion (heart icon)
-  ctx.fillStyle = COLORS.ITEM_POTION;
-  const phx = guideX + 4;
-  const phy = hudY + 14;
-  ctx.beginPath();
-  ctx.moveTo(phx, phy + 3);
-  ctx.bezierCurveTo(phx - 5, phy - 1, phx - 5, phy - 4.5, phx - 2.5, phy - 4.5);
-  ctx.bezierCurveTo(phx - 0.5, phy - 4.5, phx, phy - 3, phx, phy - 2);
-  ctx.bezierCurveTo(phx, phy - 3, phx + 0.5, phy - 4.5, phx + 2.5, phy - 4.5);
-  ctx.bezierCurveTo(phx + 5, phy - 4.5, phx + 5, phy - 1, phx, phy + 3);
-  ctx.fill();
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('Potion +20HP (F)', guideX + 14, hudY + 18);
-  // Weapon
-  ctx.strokeStyle = COLORS.ITEM_WEAPON;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(guideX, hudY + 30);
-  ctx.lineTo(guideX + 8, hudY + 22);
-  ctx.stroke();
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('Weapon (press F)', guideX + 14, hudY + 30);
-  // Scroll
-  ctx.fillStyle = COLORS.ITEM_SCROLL;
-  ctx.fillRect(guideX, hudY + 35, 8, 8);
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('Scroll: blinds (F)', guideX + 14, hudY + 42);
-  // Armor
-  ctx.fillStyle = COLORS.ITEM_ARMOR;
-  ctx.fillRect(guideX, hudY + 36, 8, 8);
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('Armor (press F)', guideX + 14, hudY + 43);
-  // Key
-  ctx.fillStyle = '#ffd700';
-  ctx.beginPath();
-  ctx.arc(guideX + 4, hudY + 53, 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillRect(guideX + 2, hudY + 56, 3, 4);
-  ctx.fillStyle = '#aaa';
-  ctx.fillText('Key (auto)', guideX + 14, hudY + 57);
+  ctx.fillText(promptText, promptX, hudY + 33);
 
-  // Minimap hint (visible, below minimap area)
+  ctx.fillStyle = context.audioMuted ? '#e63946' : '#666';
+  ctx.font = '11px monospace';
+  ctx.fillText(context.audioMuted ? 'Audio muted' : 'Audio on', promptX, hudY + 53);
+
   ctx.fillStyle = '#666';
   ctx.font = '12px monospace';
   ctx.textAlign = 'right';
   ctx.fillText('[M] Map  \u2022  Click minimap', canvas.width - 15, hudY - 8);
 
-  // Message log (top-left)
   const msgs = messageLog.getRecent();
   ctx.textAlign = 'left';
   for (let i = 0; i < msgs.length; i++) {
     const msg = msgs[i];
-    const age = Date.now() - msg.time;
+    const age = now - msg.time;
     const alpha = Math.max(0, 1 - age / CONFIG.MESSAGE_DISPLAY_TIME);
     ctx.globalAlpha = alpha;
     ctx.font = '13px monospace';
@@ -310,7 +283,7 @@ export function drawMainMenu(ctx, canvas, highScores, hoverState = '', difficult
   // Tagline
   ctx.fillStyle = '#6a6a8a';
   ctx.font = '16px monospace';
-  ctx.fillText('A procedural roguelike  \u2022  5 floors  \u2022  permadeath', cx, cy - 82);
+  ctx.fillText('Realtime dungeon tactics  \u2022  seeded runs  \u2022  permadeath', cx, cy - 82);
 
   // Two-column controls — larger text and spacing
   ctx.font = '14px monospace';
@@ -319,9 +292,9 @@ export function drawMainMenu(ctx, canvas, highScores, hoverState = '', difficult
   const ctrlY = cy - 40;
   const ctrlSpacing = 26;
   const controls = [
-    ['WASD', 'Move', 'F', 'Pick up'],
+    ['WASD', 'Move', 'F', 'Use / pick up'],
     ['Q/E/Z/C', 'Diagonal', 'SPACE', 'Wait'],
-    ['Bump', 'Attack', 'ESC', 'Pause'],
+    ['Bump', 'Attack', 'ESC', 'Pause / audio'],
   ];
   for (let i = 0; i < controls.length; i++) {
     const [k1, v1, k2, v2] = controls[i];
@@ -393,26 +366,10 @@ export function drawMainMenu(ctx, canvas, highScores, hoverState = '', difficult
   ctx.textAlign = 'center';
   ctx.fillText('ENTER  \u2014  Start Game', cx, btnY + 7);
 
-  // Store button — below start
-  const storeBtnY = cy + 204;
-  const storeBtnW = 200;
-  const storeBtnH = 38;
-  const isStoreHover = hoverState === 'store';
-
-  ctx.save();
-  ctx.beginPath();
-  roundRect(ctx, cx - storeBtnW / 2, storeBtnY - storeBtnH / 2, storeBtnW, storeBtnH, 5);
-  ctx.fillStyle = isStoreHover ? 'rgba(180, 140, 255, 0.15)' : 'rgba(180, 140, 255, 0.05)';
-  ctx.fill();
-  ctx.strokeStyle = isStoreHover ? '#b185db' : 'rgba(180, 140, 255, 0.25)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.fillStyle = isStoreHover ? '#d4b8ff' : '#9a7abf';
-  ctx.font = '14px monospace';
+  ctx.fillStyle = '#7a8ca5';
+  ctx.font = '12px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText('Store', cx, storeBtnY + 5);
+  ctx.fillText('Vaults, guard posts, sanctuaries, merchants, shrines', cx, cy + 204);
 
   // Info icon (bottom-right) - clickable, larger
   const iconX = canvas.width - 55;
@@ -450,6 +407,42 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.quadraticCurveTo(x, y + h, x, y + h - r);
   ctx.lineTo(x, y + r);
   ctx.quadraticCurveTo(x, y, x + r, y);
+}
+
+export function getPauseMenuLayout(canvas, optionCount = 4) {
+  const panelW = 300;
+  const panelH = 150 + optionCount * 44;
+  const cx = canvas.width / 2;
+  const cy = canvas.height / 2;
+  return {
+    cx,
+    cy,
+    panelW,
+    panelH,
+    panelX: cx - panelW / 2,
+    panelY: cy - panelH / 2 - 20,
+    btnW: 220,
+    btnH: 36,
+    btnYStart: cy - 18
+  };
+}
+
+export function getInteractionMenuLayout(canvas, optionCount = 3) {
+  const panelW = Math.min(560, canvas.width - 80);
+  const panelH = Math.max(260, 150 + optionCount * 58);
+  const panelX = canvas.width / 2 - panelW / 2;
+  const panelY = canvas.height / 2 - panelH / 2;
+  return {
+    panelW,
+    panelH,
+    panelX,
+    panelY,
+    optionX: panelX + 26,
+    optionY: panelY + 102,
+    optionW: panelW - 52,
+    optionH: 46,
+    optionGap: 12
+  };
 }
 
 // Draw the How to Play overlay
@@ -518,36 +511,33 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
 
   // --- Movement & Combat ---
   heading('MOVEMENT & COMBAT');
-  line('WASD or Arrow Keys to move in 4 directions.');
-  line('Q/E/Z/C to move diagonally (NW/NE/SW/SE).');
-  line('Enemies move in real time — they will hunt you even if you stand still!');
-  line('Walk INTO an enemy to attack (bump attack). No attack key needed.');
-  line('You have an 85% hit chance. Damage = weapon + strength bonus.');
-  line('Press SPACE or . to wait. Keep moving to stay ahead of enemies.');
+  line('WASD or Arrow Keys move in cardinal directions. Q/E/Z/C moves diagonally.');
+  line('Enemies act in real time on cooldowns, so positioning matters even while you hesitate.');
+  line('Walk into an enemy to strike. Spears can attack from two tiles away down open lanes.');
+  line('Weapons change tempo: faster blades reposition well, heavy weapons break armor, cursed gear bites back.');
+  line('Press SPACE or . to wait. Good timing matters when archers and hazards share a room.');
 
   // --- Items ---
   heading('ITEMS');
-  line('Health Potions (red heart) : Press F to use. +20 HP.', COLORS.ITEM_POTION);
-  line('Weapons (blue sword)  : Press F to equip. Better weapons on deeper floors.', COLORS.ITEM_WEAPON);
-  line('  Dagger (2-5 dmg)  |  Shortsword (2-6)  |  Longsword (3-8, Floor 2+)');
-  line('  Battle Axe (5-12 dmg, Floor 3+)');
-  line('Scrolls (purple)      : Press F to use. Blinds nearest enemy.', COLORS.ITEM_SCROLL);
-  line('Armor (silver shield)  : Press F to equip. Reduces incoming damage.', COLORS.ITEM_ARMOR);
-  line('  Leather (+1)  |  Chainmail (+2)  |  Plate (+3, F3+)  |  Dragonscale (+5, F4+)');
-  line('Floor Keys (gold)     : Auto-picked up. Required to unlock the stairs.', '#ffd700');
+  line('Health Potions restore HP. Warding Elixirs add ward charges that soften incoming hits.', COLORS.ITEM_POTION);
+  line('Quickstep Elixirs grant floor-long speed. Scrolls of Blinding disrupt the nearest visible threat.', COLORS.ITEM_SCROLL);
+  line('Weapons define your build: daggers and rapiers are accurate, spears control lanes, axes and mauls crack armor.', COLORS.ITEM_WEAPON);
+  line('Armor trades mobility for durability. Dragonscale keeps lava manageable.', COLORS.ITEM_ARMOR);
+  line('Gold is auto-collected and spent at Quartermasters inside some sanctuaries.', COLORS.ITEM_GOLD);
+  line('Floor Keys are auto-collected and unlock sealed stairs once enough are found.', '#ffd700');
   gap();
-  line('Cursed items have powerful stats but drain HP when you attack!', '#8b00ff');
+  line('Cursed items are stronger than they look, but every hit costs blood.', '#8b00ff');
 
   // --- Enemies ---
   heading('ENEMIES');
-  line('Skeleton (beige)  - 45 HP, medium speed. Fights to the death.', COLORS.SKELETON);
-  line('Goblin (green)    - 15 HP (scales per floor), fast. Flees at <25% HP.', COLORS.GOBLIN);
-  line('Archer (tan)      - 25 HP, ranged attacks from 5 tiles. Flees up close.', COLORS.ARCHER);
-  line('Troll (brown)     - 75 HP, slow but hits hard (10 dmg). Floor 3+.', COLORS.TROLL);
+  line('Skeletons are patient anchors. They hold space well and do not panic.', COLORS.SKELETON);
+  line('Goblins are fragile skirmishers. Ice helps them, and they flee if a fight turns bad.', COLORS.GOBLIN);
+  line('Archers look for firing lanes and prefer hazard buffers between you and them.', COLORS.ARCHER);
+  line('Trolls are juggernauts. Lava empowers them instead of slowing them down.', COLORS.TROLL);
   gap();
-  line('Elite enemies have crowns, larger bodies, and stronger stats.');
-  line('Enemy dots: gray = idle, red = chasing you, yellow = fleeing.');
-  line('Enemies use A* pathfinding to hunt you through corridors.');
+  line('Elite enemies gain extra durability, more gold, and more pressure in key rooms.');
+  line('Enemy markers: gray = idle, red = chasing, yellow = fleeing.');
+  line('Hazards affect enemies too. Watch who avoids them, who uses them, and who does not care.');
 
   // --- Leveling ---
   heading('LEVELING UP');
@@ -556,58 +546,52 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
 
   // --- Room Types ---
   heading('ROOM TYPES');
-  line('Normal rooms   - Standard enemies and loot.');
-  line('Treasure rooms - Fewer enemies, lots of items. Worth exploring!');
-  line('Guard posts    - Heavy enemy presence, but better loot chance.');
-  line('Safe rooms     - No enemies or hazards. A place to rest.');
+  line('Dusty Chambers are standard rooms with balanced pressure and scavenging.');
+  line('Vaults are rich but exposed. They reward quick looting and sharp exits.');
+  line('Guard Posts are structured kill-zones with better defenders and cleaner ranged lines.');
+  line('Sanctuaries have no combat spawns and contain one strong feature: fountain, shrine, or merchant.');
 
   // --- Hazards ---
   heading('ENVIRONMENTAL HAZARDS (Floor 2+)');
-  line('Lava (orange glow)  - Deals 5 damage when you step on it.', COLORS.LAVA);
-  line('Ice (light blue)    - Slide one tile in the same direction.', COLORS.ICE);
-  line('Spike Trap (gray)   - Deals 3 damage when you step on it.', COLORS.SPIKE_TRAP);
+  line('Lava burns most units, but some monsters become stronger inside it.', COLORS.LAVA);
+  line('Ice carries movement forward. Goblins slide especially well.', COLORS.ICE);
+  line('Spike traps punish careless routing and can finish weakened enemies.', COLORS.SPIKE_TRAP);
 
   // --- Floors ---
   heading('FLOOR PROGRESSION');
   line('Each floor requires keys to unlock the stairs. Explore to find them!');
-  line('Floor 1: 5-8 enemies, lots of items. 1 key needed.');
-  line('Floor 2: 8-12 enemies. Archers + Longswords appear. 1 key needed.');
-  line('Floor 3: Trolls appear! Battle Axes available. 2 keys needed.');
-  line('Floor 4: More trolls, fewer items. 2 keys needed.');
-  line('Floor 5: 15-20 enemies + The Ancient One (boss). 3 keys needed.');
+  line('Difficulty changes enemy durability, damage, XP, and total item density.');
+  line('Early floors offer more sustain. Later floors compress item supply and raise room pressure.');
+  line('Sanctuaries and merchants create build pivots mid-run instead of simple stat padding.');
+  line('Floor 5 ends with The Ancient One, whose later phases change tempo and arena control.');
   gap();
-  line('The Ancient One has 4 phases - gets faster and stronger as HP drops!');
+  line('The Ancient One has 4 phases and eventually begins leaving lava behind while fighting.');
 
   // --- HUD ---
   heading('READING THE SCREEN');
-  line('Bottom bar: HP (red), XP (yellow), floor, weapon, strength, kills.');
+  line('Bottom bar: HP, XP, floor, room name, weapon/armor, gold, ward, speed, keys, and your contextual action.');
   line('Top-left: Combat messages (fade after 3 seconds).');
-  line('Top-right: Minimap. White=you, Red=enemies, Yellow=stairs.');
-  line('Fog of war: You see 8 tiles. Explored areas stay dimmed.');
+  line('Top-right: Minimap. Room colors hint at vaults, guard posts, and sanctuaries once explored.');
+  line('Large room banners appear when you enter important spaces for faster recognition.');
 
   // --- Tips ---
   heading('TIPS');
-  line('Lure enemies into corridors for 1-on-1 fights.');
-  line('Grab every potion you can. Items get scarce on deeper floors.');
-  line('Kill Goblins fast - they are quick and can swarm you.');
-  line('Use Scrolls of Blinding on Trolls. They hit HARD.');
-  line('Stand on yellow stairs and press ENTER to go deeper.');
-  line('Check the minimap to find the stairs (yellow dot).');
-  line('Hover your mouse over enemies to see their HP and status.');
-  line('Press B for colorblind mode (letter indicators on enemies/items).');
-  line('The game has procedural audio - sound effects are generated live.');
-  line('Press D on the main menu to change difficulty (Easy/Normal/Hard).');
-  line('Press S on the main menu to enter a custom seed for seeded runs.');
-  line('Press T on the main menu for a Daily Run (same seed for everyone!).');
+  line('Pull archers around corners or force them to move off their ideal firing lane.');
+  line('Let hazards do work for you, but remember some enemies gain value from them too.');
+  line('Spend gold on identity, not panic. Quartermasters are strongest when they sharpen a plan.');
+  line('Shrines trade permanent power for permanent cost. Pick the drawback your run can absorb.');
+  line('Hover enemies and items for deeper readouts, and watch room banners for immediate intent.');
+  line('Press B for colorblind mode and use the pause menu for audio controls.');
+  line('Press D on the main menu to change difficulty, S for a custom seed, and T for the daily run.');
 
   // --- Controls Reference ---
   heading('CONTROLS');
   line('WASD / Arrows  -  Move / Attack (bump into enemy)');
   line('Q/E/Z/C        -  Diagonal movement (NW/NE/SW/SE)');
-  line('F              -  Pick up item / Use scroll');
+  line('F              -  Interact, equip, drink, or open a sanctuary menu');
   line('SPACE or .     -  Wait (skip turn)');
   line('ENTER or >     -  Descend stairs');
-  line('ESC            -  Pause menu');
+  line('ESC            -  Pause menu / close overlays');
   line('B              -  Toggle colorblind mode');
   line('M              -  Toggle full map');
   line('R              -  Restart (from game over / victory)');
@@ -622,20 +606,16 @@ export function drawHowToPlay(ctx, canvas, scrollOffset) {
 }
 
 // Draw pause menu
-export function drawPauseMenu(ctx, canvas, selectedOption, hoverOption = -1) {
-  // Darken screen with blur-like effect
+export function drawPauseMenu(ctx, canvas, selectedOption, hoverOption = -1, audioMuted = false) {
   ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
+  const options = ['Resume', audioMuted ? 'Audio: Muted' : 'Audio: On', 'Restart', 'Quit to Menu'];
+  const layout = getPauseMenuLayout(canvas, options.length);
 
-  // Panel background
-  const panelW = 280;
-  const panelH = 220;
   ctx.save();
   ctx.beginPath();
-  roundRect(ctx, cx - panelW / 2, cy - panelH / 2 - 20, panelW, panelH, 8);
+  roundRect(ctx, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 8);
   ctx.fillStyle = 'rgba(13, 13, 30, 0.95)';
   ctx.fill();
   ctx.strokeStyle = 'rgba(255, 214, 10, 0.2)';
@@ -643,34 +623,25 @@ export function drawPauseMenu(ctx, canvas, selectedOption, hoverOption = -1) {
   ctx.stroke();
   ctx.restore();
 
-  // Title
   ctx.textAlign = 'center';
   ctx.fillStyle = COLORS.PLAYER;
   ctx.font = 'bold 28px monospace';
-  ctx.fillText('PAUSED', cx, cy - 60);
+  ctx.fillText('PAUSED', layout.cx, layout.cy - 78);
 
-  // Separator
   ctx.strokeStyle = 'rgba(255,255,255,0.1)';
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(cx - 80, cy - 40);
-  ctx.lineTo(cx + 80, cy - 40);
+  ctx.moveTo(layout.cx - 92, layout.cy - 58);
+  ctx.lineTo(layout.cx + 92, layout.cy - 58);
   ctx.stroke();
 
-  // Button options
-  const options = ['Resume', 'Restart', 'Quit to Menu'];
-  const btnW = 200;
-  const btnH = 36;
   for (let i = 0; i < options.length; i++) {
-    const btnY = cy - 10 + i * 44;
-    const isSelected = i === selectedOption;
-    const isHover = i === hoverOption;
-    const active = isSelected || isHover;
+    const btnY = layout.btnYStart + i * 44;
+    const active = i === selectedOption || i === hoverOption;
 
-    // Button background
     ctx.save();
     ctx.beginPath();
-    roundRect(ctx, cx - btnW / 2, btnY - btnH / 2, btnW, btnH, 4);
+    roundRect(ctx, layout.cx - layout.btnW / 2, btnY - layout.btnH / 2, layout.btnW, layout.btnH, 4);
     if (active) {
       ctx.fillStyle = 'rgba(255, 214, 10, 0.12)';
       ctx.fill();
@@ -686,18 +657,133 @@ export function drawPauseMenu(ctx, canvas, selectedOption, hoverOption = -1) {
     }
     ctx.restore();
 
-    // Button text
-    ctx.fillStyle = active ? COLORS.PLAYER : '#aaa';
+    ctx.fillStyle = active ? COLORS.PLAYER : (i === 1 && audioMuted ? '#e63946' : '#aaa');
     ctx.font = active ? 'bold 15px monospace' : '14px monospace';
-    ctx.textAlign = 'center';
-    ctx.fillText(options[i], cx, btnY + 5);
+    ctx.fillText(options[i], layout.cx, btnY + 5);
   }
 
-  // Hint
   ctx.fillStyle = '#444';
   ctx.font = '11px monospace';
+  ctx.fillText('ESC to resume  \u2022  Click or ENTER to select', layout.cx, layout.panelY + layout.panelH - 20);
+}
+
+export function drawInteractionMenu(ctx, canvas, menu, selectedOption = 0, hoverOption = -1) {
+  if (!menu) return;
+
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.78)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const layout = getInteractionMenuLayout(canvas, menu.options.length);
+
+  ctx.save();
+  ctx.beginPath();
+  roundRect(ctx, layout.panelX, layout.panelY, layout.panelW, layout.panelH, 10);
+  ctx.fillStyle = 'rgba(12, 16, 28, 0.96)';
+  ctx.fill();
+  ctx.strokeStyle = menu.color || COLORS.PLAYER;
+  ctx.globalAlpha = 0.45;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  ctx.textAlign = 'left';
+  ctx.fillStyle = menu.color || COLORS.PLAYER;
+  ctx.font = 'bold 26px monospace';
+  ctx.fillText(menu.title, layout.panelX + 24, layout.panelY + 38);
+  ctx.fillStyle = '#b8bccd';
+  ctx.font = '13px monospace';
+  ctx.fillText(menu.subtitle || '', layout.panelX + 24, layout.panelY + 62);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)';
+  ctx.beginPath();
+  ctx.moveTo(layout.panelX + 24, layout.panelY + 78);
+  ctx.lineTo(layout.panelX + layout.panelW - 24, layout.panelY + 78);
+  ctx.stroke();
+
+  for (let i = 0; i < menu.options.length; i++) {
+    const option = menu.options[i];
+    const y = layout.optionY + i * (layout.optionH + layout.optionGap);
+    const active = i === selectedOption || i === hoverOption;
+    const disabled = !!option.disabled;
+
+    ctx.save();
+    ctx.beginPath();
+    roundRect(ctx, layout.optionX, y, layout.optionW, layout.optionH, 6);
+    if (active && !disabled) {
+      ctx.fillStyle = 'rgba(255, 214, 10, 0.10)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 214, 10, 0.36)';
+    } else {
+      ctx.fillStyle = disabled ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.04)';
+      ctx.fill();
+      ctx.strokeStyle = disabled ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.08)';
+    }
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = disabled ? '#646878' : (active ? '#fff4c2' : '#f2e9e4');
+    ctx.font = 'bold 15px monospace';
+    ctx.fillText(option.title, layout.optionX + 16, y + 20);
+    ctx.fillStyle = disabled ? '#5c6070' : '#a8adbe';
+    ctx.font = '12px monospace';
+    ctx.fillText(option.description, layout.optionX + 16, y + 36);
+
+    if (option.cost !== null && option.cost !== undefined) {
+      ctx.fillStyle = disabled ? '#606570' : COLORS.ITEM_GOLD;
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText(`${option.cost}g`, layout.optionX + layout.optionW - 16, y + 28);
+      ctx.textAlign = 'left';
+    } else if (disabled) {
+      ctx.fillStyle = '#606570';
+      ctx.font = '12px monospace';
+      ctx.textAlign = 'right';
+      ctx.fillText('taken', layout.optionX + layout.optionW - 16, y + 28);
+      ctx.textAlign = 'left';
+    }
+  }
+
   ctx.textAlign = 'center';
-  ctx.fillText('ESC to resume  \u2022  Click or ENTER to select', cx, cy + panelH / 2 - 30);
+  ctx.fillStyle = '#666';
+  ctx.font = '11px monospace';
+  ctx.fillText('Enter or F to confirm  \u2022  ESC to leave', canvas.width / 2, layout.panelY + layout.panelH - 18);
+}
+
+export function drawRoomBanner(ctx, canvas, banner) {
+  if (!banner) return;
+
+  const elapsed = banner.until - Date.now();
+  if (elapsed <= 0) return;
+
+  const duration = CONFIG.ROOM_BANNER_MS;
+  const progress = 1 - elapsed / duration;
+  const fadeIn = Math.min(1, progress / 0.18);
+  const fadeOut = Math.min(1, elapsed / 450);
+  const alpha = Math.min(fadeIn, fadeOut);
+  const width = Math.min(520, canvas.width - 70);
+  const x = canvas.width / 2 - width / 2;
+  const y = 26;
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.beginPath();
+  roundRect(ctx, x, y, width, 66, 10);
+  ctx.fillStyle = 'rgba(8, 12, 22, 0.92)';
+  ctx.fill();
+  ctx.strokeStyle = banner.color || COLORS.PLAYER;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.textAlign = 'center';
+  ctx.fillStyle = banner.color || COLORS.PLAYER;
+  ctx.font = 'bold 19px monospace';
+  ctx.fillText(banner.title, canvas.width / 2, y + 24);
+  ctx.fillStyle = '#d4dae8';
+  ctx.font = '12px monospace';
+  ctx.fillText(banner.subtitle, canvas.width / 2, y + 45);
+  ctx.restore();
 }
 
 // Draw game over screen
@@ -769,75 +855,6 @@ export function drawVictory(ctx, canvas, player, seed) {
   ctx.globalAlpha = 0.5 + pulse * 0.5;
   ctx.fillText('Press R or click to continue', cx, cy + 150);
   ctx.globalAlpha = 1;
-}
-
-// Draw Store overlay (Coming Soon)
-export function drawStore(ctx, canvas) {
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.92)';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-
-  // Panel
-  const panelW = 400;
-  const panelH = 280;
-  ctx.save();
-  ctx.beginPath();
-  roundRect(ctx, cx - panelW / 2, cy - panelH / 2, panelW, panelH, 10);
-  ctx.fillStyle = 'rgba(18, 18, 35, 0.98)';
-  ctx.fill();
-  ctx.strokeStyle = 'rgba(180, 140, 255, 0.3)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.restore();
-
-  // Store title
-  ctx.textAlign = 'center';
-  ctx.save();
-  ctx.fillStyle = '#b185db';
-  ctx.shadowColor = '#b185db';
-  ctx.shadowBlur = 20;
-  ctx.font = 'bold 32px monospace';
-  ctx.fillText('STORE', cx, cy - 70);
-  ctx.restore();
-
-  // Separator
-  ctx.strokeStyle = 'rgba(180, 140, 255, 0.2)';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(cx - 100, cy - 45);
-  ctx.lineTo(cx + 100, cy - 45);
-  ctx.stroke();
-
-  // Coming Soon text
-  ctx.fillStyle = '#8a6abf';
-  ctx.font = '18px monospace';
-  ctx.fillText('Coming Soon', cx, cy - 10);
-
-  // Description
-  ctx.fillStyle = '#666';
-  ctx.font = '13px monospace';
-  ctx.fillText('Customize your character with', cx, cy + 30);
-  ctx.fillText('cosmetics and unlockable skins.', cx, cy + 50);
-
-  // Decorative diamond icons
-  ctx.fillStyle = 'rgba(180, 140, 255, 0.2)';
-  for (let i = 0; i < 3; i++) {
-    const dx = cx - 40 + i * 40;
-    const dy = cy + 85;
-    ctx.save();
-    ctx.translate(dx, dy);
-    ctx.rotate(Math.PI / 4);
-    ctx.fillRect(-6, -6, 12, 12);
-    ctx.restore();
-  }
-
-  // Close hint
-  ctx.fillStyle = '#555';
-  ctx.font = '12px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillText('Click or press ESC to close', cx, cy + panelH / 2 - 20);
 }
 
 // Draw level transition screen

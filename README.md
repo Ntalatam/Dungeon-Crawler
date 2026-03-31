@@ -1,24 +1,38 @@
 # Dungeon Crawler
 
-A browser-playable top-down roguelike dungeon crawler built with vanilla JavaScript and HTML5 Canvas 2D. No frameworks, no dependencies — pure JS with procedural dungeon generation, A* pathfinding, and shadowcasting FOV.
+A browser-playable vanilla-JavaScript roguelike built on HTML5 Canvas 2D. The game mixes seeded procedural generation, real-time enemy cooldowns, tactical positioning, room archetypes, sanctuary interactions, ranged pressure, hazard-aware AI, and run-based build choices without any external dependencies.
 
-## How to Run
+## Highlights
 
-Since this is a pure static web app using ES6 modules, you need an HTTP server (browsers block module loading from `file://` URLs).
+- Seeded BSP dungeon generation with repeatable runs and a daily seed mode
+- Real-time-with-cooldowns combat loop instead of strict turn passing
+- 8-direction movement, fog of war, minimap, hover tooltips, and local high scores
+- Distinct room archetypes: vaults, guard posts, sanctuaries, entry halls, and sealed stairwells
+- Sanctuary systems: healing fountains, oath shrines, and Quartermaster merchants
+- Hazard-aware combat where lava, ice, and spike traps affect both the player and enemies
+- Build-defining loot: reach weapons, armor tradeoffs, warding, speed elixirs, cursed gear, and gold economy
+- Accessibility and polish features including colorblind mode, procedural audio, and pause-menu audio controls
 
-### Option 1: VS Code Live Server (Recommended)
-1. Install the **Live Server** extension in VS Code (by Ritwick Dey)
-2. Right-click on `index.html` in the file explorer
-3. Select **"Open with Live Server"**
-4. Your browser opens automatically at `http://localhost:5500`
+## Running Locally
 
-### Option 2: Python local server
+This project is a static ES module app, so it needs an HTTP server.
+
+### Option 1: VS Code Live Server
+
+1. Install the **Live Server** extension
+2. Right-click `index.html`
+3. Choose **Open with Live Server**
+
+### Option 2: Python
+
 ```bash
 python3 -m http.server 8000
 ```
-Then open `http://localhost:8000` in your browser.
 
-### Option 3: npx serve
+Then open `http://localhost:8000`.
+
+### Option 3: `npx serve`
+
 ```bash
 npx serve .
 ```
@@ -27,91 +41,114 @@ npx serve .
 
 | Key | Action |
 |-----|--------|
-| **W / Arrow Up** | Move up |
-| **A / Arrow Left** | Move left |
-| **S / Arrow Down** | Move down |
-| **D / Arrow Right** | Move right |
-| **E** | Pick up item (weapons, scrolls) |
-| **Space** or **.** | Wait (skip your turn — enemies still act) |
-| **Enter** or **>** | Descend stairs |
-| **Escape** | Pause menu |
-| **R** | Restart (from game over / victory screen) |
+| `W A S D` or arrow keys | Move |
+| `Q E Z C` | Diagonal movement |
+| `F` | Interact, equip, drink, read, or open sanctuary choices |
+| `Space` or `.` | Wait |
+| `Enter` or `>` | Descend stairs |
+| `M` | Toggle enlarged minimap |
+| `B` | Toggle colorblind mode |
+| `Esc` | Pause / close overlays |
+| `R` | Return to menu from game over or victory |
+| Main menu `D` | Cycle difficulty |
+| Main menu `S` | Enter a custom seed |
+| Main menu `T` | Start the daily run |
 
-## How to Play
+## How It Plays
 
-### Core Gameplay
+### Combat Loop
 
-**Movement & Turn System**: Every time you move or act, all enemies get a turn too. It feels real-time but is actually turn-based — nothing happens until you press a key.
+Movement and combat happen in real time on cooldowns. Enemies keep acting if you stall, so corridors, timing, and sight lines matter. Walking into an enemy performs a melee attack automatically. Some weapons alter cadence and range: rapiers and daggers are accurate, spears can attack from two tiles away down open lanes, and heavier weapons hit harder but slow movement.
 
-**Attacking**: Walk *into* an enemy to attack (bump attack). There's no separate attack key. You have an 85% hit chance, and damage depends on your equipped weapon + strength stat.
+### Room Identity
 
-**Fog of War**: You can only see tiles within 8 tiles line-of-sight. Explored areas stay dimmed on the map. Unexplored areas are pitch black.
+Rooms are intentionally specialized:
 
-**Stairs**: Each floor has stairs down (yellow lines on the ground). Stand on them and press **Enter** or **>** to descend. Your goal is to reach and clear Floor 5.
+- **Dusty Chambers** are balanced baseline spaces
+- **Vaults** lean toward richer loot with lighter resistance
+- **Guard Posts** create stronger ranged pressure and tougher defense
+- **Sanctuaries** remove enemy pressure and offer a one-time high-impact feature
+- **Sealed Stairwells** are progression checkpoints gated by floor keys
 
-### Items
+Each new room type is called out with a banner and reinforced with distinct floor accents on the map and minimap.
 
-- **Health Potions** (red + symbol): Auto-picked up when you walk over them. Restores 15 HP.
-- **Weapons** (blue sword symbol): Press **E** while standing on them to equip. Four tiers:
-  - *Dagger* (1-4 dmg) — available from Floor 1
-  - *Shortsword* (2-6 dmg) — available from Floor 1
-  - *Longsword* (3-8 dmg) — appears from Floor 2+
-  - *Battle Axe* (5-12 dmg) — appears from Floor 3+
-- **Scroll of Blinding** (purple rectangle): Press **E** to use. Blinds the nearest visible enemy for 5 seconds, reducing their detection range to 1 tile.
+### Sanctuaries
+
+Sanctuaries are safe rooms with meaningful run-shaping choices:
+
+- **Silver Fountain**: restore health and gain ward charges
+- **Oath Shrine**: accept a permanent blessing with a permanent drawback
+- **Quartermaster**: spend gold on gear or persistent run upgrades
+
+Quartermasters are meant to create build decisions, not just emergency healing. Gold comes from enemy kills and gold caches.
+
+### Hazards
+
+Hazards affect everyone:
+
+- **Lava** burns most units but empowers lava-affine enemies
+- **Ice** extends movement and lets some enemies slide farther
+- **Spike traps** punish careless routing and can finish weakened targets
+
+Enemy pathing now accounts for hazard preferences, so archers try to use hazard buffers, fragile enemies avoid danger more aggressively, and juggernauts may ignore it.
+
+### Items and Progression
+
+Items are organized around clearer tactical roles:
+
+- **Health Potions** for sustain
+- **Warding Elixirs** for temporary damage mitigation
+- **Quickstep Elixirs** for floor-long mobility
+- **Weapons** with stronger identities, including reach and armor-piercing options
+- **Armor** with defense and movement tradeoffs
+- **Scrolls of Blinding** for control
+- **Gold caches** that feed the merchant economy
+- **Floor Keys** that unlock sealed stairs
+
+Difficulty now changes both enemy scaling and overall item density.
 
 ### Enemies
 
-| Type | Color | HP | Speed | Behavior |
-|------|-------|----|-------|----------|
-| **Skeleton** | Beige | 30 | Slow (acts every 2 turns) | Chases and fights to the death |
-| **Goblin** | Green | 12 | Fast (acts every turn) | Flees when below 25% HP |
-| **Troll** | Brown | 60 | Very slow (acts every 3 turns) | Heavy damage, appears Floor 3+ |
+- **Skeletons** are steady anchor enemies with modest defense
+- **Goblins** are fast skirmishers that flee when fights sour
+- **Archers** play for ranged lanes and spacing
+- **Trolls** are slow juggernauts that hit hard and thrive in lava
+- **Elite enemies** add tension to important rooms
+- **The Ancient One** phases through the boss fight and eventually starts leaving lava behind
 
-Enemies have a colored dot above them showing their AI state: gray = idle/patrol, red = chasing you, yellow = fleeing.
+## Progression and Difficulty
 
-### Leveling Up
+- Floors 1-5 increase enemy counts, room pressure, and scarcity
+- Later floors require more keys to open the stairs
+- Difficulty presets adjust enemy HP, damage, XP, and item density
+- Runs can be random, custom-seeded, or daily-seeded
 
-You earn XP from kills. XP thresholds: 10, 25, 45, 70, 100, 140 for levels 2-7. Each level-up gives **+5 max HP**, **+1 strength**, and a **full heal**.
+## UI and Accessibility
 
-### Floor Progression
+- Hover an enemy or item for extra information
+- Use the minimap for navigation and the enlarged map for macro routing
+- Colorblind mode adds letter indicators to enemies, items, and interactables
+- Audio is generated procedurally in real time and can be toggled from the pause menu
 
-| Floor | Enemies | Notes |
-|-------|---------|-------|
-| 1 | 5-8 skeletons & goblins | High item density |
-| 2 | 8-12 skeletons & goblins | Longswords start appearing |
-| 3 | 10-15 + trolls | Battle Axes start appearing |
-| 4 | 12-18 + more trolls | Low item density |
-| 5 | 15-20 + **The Ancient One** (120 HP boss troll) | Beat the boss, descend to win |
+## Project Structure
 
-### HUD
+- `src/main.js` orchestrates the game loop, state flow, input handling, interaction flow, and persistence
+- `src/dungeon.js` generates BSP layouts, doors, hazards, stairs, and floor spawn points
+- `src/rooms.js` assigns room archetypes and room-level spawn/hazard plans
+- `src/interactables.js` defines sanctuary features and their menu-driven outcomes
+- `src/entities.js` defines player, enemy, boss, and item data plus spawn logic
+- `src/ai.js` handles pathfinding, ranged positioning, fleeing, and hazard-aware movement
+- `src/hazards.js` centralizes hazard cost and hazard effect logic for enemies
+- `src/combat.js` resolves attacks, loot, leveling, pickups, and defensive systems
+- `src/renderer.js` draws the world, room accents, minimaps, interactables, particles, and effects
+- `src/fov.js` computes visibility and exploration
+- `src/ui.js` draws HUD, menus, overlays, room banners, and interaction panels
+- `src/audio.js` produces procedural sound effects and mute control
+- `src/constants.js` contains game balance data, colors, equipment tables, and state constants
 
-- **Bottom bar**: HP bar (red), XP bar (yellow), current floor, equipped weapon, strength, kill count
-- **Top-left**: Combat message log (fades after 3 seconds)
-- **Top-right**: Minimap (white dot = you, red dots = visible enemies, yellow = stairs)
+## Tech
 
-### Tips
-
-- Don't rush into rooms full of enemies — lure them into corridors for 1v1 fights
-- Pick up every Health Potion you can find, items get scarcer on deeper floors
-- Goblins are fast but fragile — kill them quickly before they swarm you
-- Wait (Space) strategically to let enemies come to you
-- Use Scrolls of Blinding on Trolls — they hit extremely hard
-
-## Tech Stack
-
-- **Runtime**: Vanilla JS, ES6 modules
-- **Rendering**: HTML5 Canvas 2D API
-- **Storage**: localStorage for high scores
-- **Deployment**: Static files only — deployable to GitHub Pages or Netlify
-
-## Architecture
-
-- `src/dungeon.js` — BSP tree dungeon generation with seeded RNG (Mulberry32)
-- `src/renderer.js` — Two-layer Canvas 2D rendering with smooth camera lerp
-- `src/fov.js` — Recursive shadowcasting field-of-view
-- `src/entities.js` — Player, Enemy, Item classes with floor-based spawning
-- `src/ai.js` — A* pathfinding (min-heap priority queue) + 5-state enemy FSM
-- `src/combat.js` — Hit resolution, damage, loot drops, leveling
-- `src/ui.js` — HUD, message log, menus (all drawn on canvas)
-- `src/main.js` — Game loop, state machine, input handling
-- `src/constants.js` — All configuration, tile types, colors, enemy stats
+- Vanilla JavaScript with ES modules
+- HTML5 Canvas 2D rendering
+- `localStorage` for high-score and run stat persistence
+- Static-file deployment friendly
